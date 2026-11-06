@@ -1,9 +1,9 @@
 ---
-title: REPL
-description: Chat with the fuseraft REPL in the browser, confined to a workspace, with approvals and saved chats.
+title: Chat
+description: Chat with fuseraft in the browser, confined to a workspace, with approvals and saved chats.
 ---
 
-The **REPL** page is the same engine as `fuseraft repl` and the VS Code extension, in a browser. Each
+The **Chat** page is the same engine as `fuseraft repl` and the VS Code extension, in a browser. Each
 chat is a `fuseraft repl --vscode` process speaking the JSONL bridge.
 
 ## Start a chat
@@ -35,7 +35,7 @@ terminal. See the fuseraft [REPL docs](/fuseraft-cli/repl/) for the list.
 
 ## Saved chats
 
-A chat is saved to your fuseraft home after each turn. **Recent Sessions** on the REPL page lists
+A chat is saved to your fuseraft home after each turn. **Recent Chats** on the Chat page lists
 them, and opening one resumes it. Your chats are your own: admins can't see them.
 
 Open chats run in [relay processes](/fuseraft-web/deploy/restarts/), so restarting fuseraft-web

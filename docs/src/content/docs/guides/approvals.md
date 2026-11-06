@@ -4,7 +4,7 @@ description: The HITL page collects every approval your sessions, chats and daem
 ---
 
 Agents ask before they act. The **HITL** (human-in-the-loop) page collects every approval your
-sessions, REPL chats and daemon tasks are waiting on, with a badge count in the nav. Each one links
+sessions, chats and daemon tasks are waiting on, with a badge count in the nav. Each one links
 back to where it came from.
 
 | Kind | What it shows |
@@ -20,7 +20,7 @@ back to where it came from.
 
 - Everyone sees the approvals for their own sessions, chats and daemon tasks.
 - Admins also see, and can answer, other people's session approvals.
-- REPL chat approvals are only ever their owner's.
+- Chat approvals are only ever their owner's.
 - On a shared daemon, a non-admin sees only the approvals for the tasks they sent. See
   [Daemons](/fuseraft-web/guides/daemons/#who-can-use-a-daemon).
 

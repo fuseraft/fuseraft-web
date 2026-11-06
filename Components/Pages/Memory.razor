@@ -5,7 +5,7 @@
 
 <div class="page-header">
     <h1>Memory</h1>
-    <p class="muted">Persistent facts recalled by agents and the REPL across sessions.</p>
+    <p class="muted">Persistent facts recalled by agents and chats across sessions.</p>
 </div>
 
 @if (_error is not null)
@@ -23,7 +23,7 @@ else
     <div class="memory-scope-tabs">
         <button class="memory-scope-tab @(_scope == "repl" ? "active" : "")"
                 @onclick='() => SetScope("repl")'>
-            REPL
+            Chats
             <span class="memory-count-badge">@_replEntries.Count</span>
         </button>
         @foreach (var kv in _agentEntries)

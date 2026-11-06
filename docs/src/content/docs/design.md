@@ -10,7 +10,7 @@ fuseraft-web doesn't link fuseraft's assemblies. It runs the `fuseraft` CLI and 
 
 - `--json` queries for lists: sessions, plugins, configs, memory, the schedule.
 - JSONL event streams for live work: `fuseraft run --bridge` for sessions and
-  `fuseraft repl --vscode` for REPL chats, the same bridge the VS Code extension uses.
+  `fuseraft repl --vscode` for chats, the same bridge the VS Code extension uses.
 
 So a fuseraft upgrade can't break fuseraft-web's build. fuseraft reports the protocol version it
 speaks, and a mismatch is reported in the UI and the log rather than misread.
