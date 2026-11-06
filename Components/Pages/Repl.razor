@@ -196,15 +196,17 @@ else
                       value="@_input"
                       @oninput="@(e => _input = e.Value?.ToString() ?? "")"
                       @onkeydown="OnKeyDown"
-                      placeholder="Type a message… (Ctrl+Enter to send)"
-                      disabled="@(session.Status == ReplStatus.Thinking)"
+                      placeholder="@(session.Status == ReplStatus.Thinking && session.InputWhileBusy
+                                     ? "Add to the reply in progress… (Ctrl+Enter to send)"
+                                     : "Type a message… (Ctrl+Enter to send)")"
+                      disabled="@(session.Status == ReplStatus.Thinking && !session.InputWhileBusy)"
                       rows="3"></textarea>
             <div class="repl-input-actions">
                 @if (session.Status == ReplStatus.Thinking)
                 {
                     <button class="btn btn-danger" @onclick="Cancel">Stop</button>
                 }
-                else
+                @if (session.Status != ReplStatus.Thinking || session.InputWhileBusy)
                 {
                     <button class="btn btn-primary" @onclick="Send"
                             disabled="@string.IsNullOrWhiteSpace(_input)">

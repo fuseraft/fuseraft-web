@@ -154,7 +154,7 @@ public sealed class RelayBridge : IBridgeProcess
 
     /// <summary>
     /// The backlog as a new server should see it. Answers go to the oldest open request, so the first N requests
-    /// were answered by the first N answers; those are dropped. What was typed becomes a <c>replayed_input</c> line.
+    /// were answered by the first N answers; those are dropped, as are requests an interrupt denied. What was typed becomes a <c>replayed_input</c> line.
     /// </summary>
     internal static IEnumerable<string> Replay(IReadOnlyList<string> backlog)
     {
@@ -167,6 +167,9 @@ public sealed class RelayBridge : IBridgeProcess
             var type = TypeOf(entry[2..]);
             if (entry[0] == RelayLine.Output && type == "approval_request") open.Enqueue(i);
             else if (entry[0] == RelayLine.Input && type == "approval_response" && open.TryDequeue(out var req)) answered.Add(req);
+            // An interrupt denies whatever approval is still open.
+            else if (entry[0] == RelayLine.Input && type == "interrupt")
+                while (open.TryDequeue(out var denied)) answered.Add(denied);
         }
 
         for (var i = 0; i < backlog.Count; i++)

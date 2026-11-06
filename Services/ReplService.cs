@@ -28,6 +28,8 @@ public sealed class ActiveReplSession : IDisposable
     public string?    StreamingText  { get; set; }
     public string?    StreamingTools { get; set; }
     public string?    Error          { get; set; }
+    /// <summary>The chat takes messages and commands while it's busy (fuseraft v1.20.0 or later).</summary>
+    public bool       InputWhileBusy { get; init; }
 
     public List<ReplMessage> Messages { get; } = [];
 
@@ -65,6 +67,9 @@ public sealed class ReplService : IDisposable
     /// <summary>The <see cref="BridgeTag.Kind"/> of a chat's relay.</summary>
     public const string Kind = "repl";
 
+    // Older CLIs read a line sent while busy as the answer to the next approval: it's denied and the message lost.
+    internal static readonly Version InputWhileBusySince = new(1, 20, 0);
+
     private static readonly JsonSerializerOptions _jsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -97,6 +102,7 @@ public sealed class ReplService : IDisposable
             ProfileId = profile.Id,
             ModelId   = profile.ModelId,
             Cwd       = cwd,
+            InputWhileBusy = await InputWhileBusyAsync(),
         };
         _sessions[key] = session;
 
@@ -132,6 +138,7 @@ public sealed class ReplService : IDisposable
             ModelId   = snapshot.ModelId,
             // A chat resumes in the directory it ran in, so its sandbox and paths still line up.
             Cwd       = cwd,
+            InputWhileBusy = await InputWhileBusyAsync(),
         };
         _sessions[key] = session;
 
@@ -160,6 +167,8 @@ public sealed class ReplService : IDisposable
             Extra = { ["key"] = key, ["profileId"] = profile.Id, ["modelId"] = session.ModelId, ["sessionId"] = session.SessionId },
         };
         if (session.Cwd is not null) tag.Extra["cwd"] = session.Cwd;
+        // Recorded for whichever server adopts the chat, which may find a different fuseraft installed.
+        if (session.InputWhileBusy) tag.Extra["inputWhileBusy"] = "1";
 
         try
         {
@@ -202,6 +211,7 @@ public sealed class ReplService : IDisposable
             ModelId   = tag.Extra.GetValueOrDefault("modelId") ?? "",
             Cwd       = tag.Extra.GetValueOrDefault("cwd"),
             StartedAt = tag.StartedAt,
+            InputWhileBusy = tag.Extra.GetValueOrDefault("inputWhileBusy") == "1",
         };
         _sessions[key] = session;
         Attach(key, session, bridge);
@@ -281,6 +291,11 @@ public sealed class ReplService : IDisposable
                 s.Status    = ReplStatus.Idle;
                 break;
 
+            case "title":
+                // Also sent when /switch or /fork switch moves the chat to another session.
+                s.SessionId = Str(root, "sessionId") ?? s.SessionId;
+                break;
+
             case "approval_request":
                 s.Relay?.Handle(s.SessionId, root);
                 break;
@@ -347,6 +362,24 @@ public sealed class ReplService : IDisposable
                 s.Messages.Add(new ReplMessage("system", $"Error: {err}", [], DateTimeOffset.UtcNow));
                 break;
 
+            case "applied":
+                // A mid-turn command (/title, /hitl on|off) took effect without waiting for the reply.
+                if (Str(root, "message") is { Length: > 0 } applied)
+                    s.Messages.Add(new ReplMessage("system", applied, [], DateTimeOffset.UtcNow));
+                break;
+
+            case "interjection":
+                // "joined" needs no note: the reply already takes the message into account.
+                var note = Str(root, "status") switch
+                {
+                    "carried" => "What you sent starts the next turn.",
+                    "dropped" => "What you sent during the turn was dropped.",
+                    _         => null,
+                };
+                if (note is not null)
+                    s.Messages.Add(new ReplMessage("system", note, [], DateTimeOffset.UtcNow));
+                break;
+
             case "warning":
                 if (Str(root, "text") is { } warn)
                     s.Messages.Add(new ReplMessage("system", warn, [], DateTimeOffset.UtcNow));
@@ -401,15 +434,19 @@ public sealed class ReplService : IDisposable
     public void SendMessage(WebUser user, string key, string text)
     {
         if (GetSession(user, key) is not { } s) return;
-        if (s.Status == ReplStatus.Thinking) return;
+        if (s.Status == ReplStatus.Thinking && !s.InputWhileBusy) return;
 
         var trimmed = text.Trim();
         if (string.IsNullOrEmpty(trimmed)) return;
 
+        var busy = s.Status == ReplStatus.Thinking;
+        // Sent mid-reply: what has streamed so far came first, so it goes above the message.
+        if (busy && s.StreamingText is { Length: > 0 } sofar)
+            s.Messages.Add(new ReplMessage("assistant", sofar, [], DateTimeOffset.UtcNow));
         s.Messages.Add(new ReplMessage("user", trimmed, [], DateTimeOffset.UtcNow));
         s.Status        = ReplStatus.Thinking;
         s.StreamingText = "";
-        s.StreamingTools = null;
+        if (!busy) s.StreamingTools = null;
         s.Error         = null;
 
         SessionChanged?.Invoke(key);
@@ -468,6 +505,8 @@ public sealed class ReplService : IDisposable
         // the line cannot be parsed as JSON.
         try { s.Bridge?.Input.WriteLine(text); } catch { }
     }
+
+    private async Task<bool> InputWhileBusyAsync() => await _cli.VersionAsync() >= InputWhileBusySince;
 
     private async Task<ModelProfile> GetProfileAsync(WebUser user, string profileId)
     {

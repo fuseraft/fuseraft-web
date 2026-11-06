@@ -66,6 +66,23 @@ public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptio
         return ParseItem<T>(doc);
     }
 
+    /// <summary>The installed fuseraft's release (<c>fuseraft --version</c>), or null when it can't be told.</summary>
+    public virtual async Task<Version?> VersionAsync()
+    {
+        try
+        {
+            var (_, stdout, _) = await ExecAsync(["--version"]);
+            return ParseVersion(stdout);
+        }
+        catch (FuseraftCliException) { return null; }
+    }
+
+    /// <summary>The <c>major.minor.patch</c> in a <c>fuseraft 1.20.0+253d8ef</c> line.</summary>
+    internal static Version? ParseVersion(string text) =>
+        System.Text.RegularExpressions.Regex.Match(text, @"(\d+)\.(\d+)\.(\d+)") is { Success: true } m
+            ? new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value))
+            : null;
+
     /// <summary>Runs a command for its effect; a non-zero exit throws with what it printed.</summary>
     public virtual Task RunAsync(params string[] args) => RunAsync(null, args);
 
