@@ -1,6 +1,6 @@
 ---
 title: Command line
-description: Running the server, and managing accounts with fuseraft-web users.
+description: Running the server, checking its version, and managing accounts with fuseraft-web users.
 ---
 
 ## The server
@@ -12,6 +12,16 @@ fuseraft-web
 With no arguments, `fuseraft-web` runs the server, configured by `appsettings.json` and the
 environment (see [Configuration](/fuseraft-web/reference/config/)). On a fresh install it logs a
 one-time link to create the first admin.
+
+## `--version` and `--help`
+
+```bash
+fuseraft-web --version     # or -v: prints the version and commit (0.3.0+<commit hash>)
+fuseraft-web --help        # or -h: usage
+```
+
+Both print and exit without starting the server or creating its data directory, wherever they
+appear among the server's arguments.
 
 ## `fuseraft-web users`
 
