@@ -11,6 +11,11 @@ chat is a `fuseraft repl --vscode` process speaking the JSONL bridge.
 Pick a **Model Profile** and a **Workspace**, and optionally a **System Prompt**, then start the
 chat. Type a message and press **Ctrl+Enter** to send it. Replies stream in and render as Markdown.
 
+With fuseraft v1.20.0 or later, you can keep typing while a reply streams. A message reaches the
+model at its next call, or starts the next turn if the reply finishes first; **Stop** drops it.
+`/title` and `/hitl on|off` take effect at once; other slash commands wait for the reply to end.
+With an older fuseraft, the box stays locked until the reply is done.
+
 ## The workspace and approvals
 
 The chat's tools are confined to its workspace. When the agent wants to write a file or run a

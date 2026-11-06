@@ -113,7 +113,7 @@ public sealed class RelayTests : IAsyncDisposable
     }
 
     [Fact]
-    public void Replay_DropsAnsweredRequests_InOrder_AndSurfacesTyping()
+    public void Replay_DropsAnsweredAndInterruptedRequests_AndSurfacesTyping()
     {
         string[] backlog =
         [
@@ -130,8 +130,8 @@ public sealed class RelayTests : IAsyncDisposable
         var replay = RelayBridge.Replay(backlog).ToList();
 
         Assert.DoesNotContain(replay, l => l.Contains("\"a\""));   // answered first
-        Assert.Contains(replay, l => l.Contains("\"b\""));         // still open
-        Assert.Contains(replay, l => l.Contains("\"c\""));
+        Assert.DoesNotContain(replay, l => l.Contains("\"b\""));   // denied by the interrupt
+        Assert.Contains(replay, l => l.Contains("\"c\""));         // still open
         Assert.DoesNotContain(replay, l => l.Contains("interrupt") || l.Contains("approval_response"));
         Assert.Contains(replay, l => l.Contains("replayed_input") && l.Contains("/clear") && l.Contains("\"raw\":true"));
         Assert.Contains("e some stderr", replay);

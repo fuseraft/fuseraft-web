@@ -19,6 +19,11 @@ internal sealed class FakeCli() : FuseraftCli(Options.Create(new FuseraftCliOpti
     /// <summary>Every home a caller asked for; the fake answers for all of them.</summary>
     public List<string> Homes { get; } = [];
 
+    /// <summary>What <see cref="VersionAsync"/> reports.</summary>
+    public Version? Version { get; set; } = new(1, 20, 0);
+
+    public override Task<Version?> VersionAsync() => Task.FromResult(Version);
+
     public override FuseraftCli ForHome(string home)
     {
         Homes.Add(home);
