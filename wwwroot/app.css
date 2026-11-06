@@ -764,6 +764,16 @@ code, pre, .mono { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', Menlo, 
   flex-wrap: wrap;
 }
 
+.question-other {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.question-skip { margin-top: 12px; }
+
+.question-other .input { flex: 1; min-width: 0; }
+
 /* ===== Empty state ===== */
 .empty-state {
   text-align: center;

@@ -1,0 +1,44 @@
+<div class="hitl-card">
+    <div class="hitl-card-header">
+        <span class="hitl-type-badge hitl-kind">Question</span>
+    </div>
+
+    <div class="hitl-prompt">
+        <div>@Question.Question</div>
+    </div>
+
+    <div class="hitl-response-area">
+        <div class="hitl-actions question-options">
+            @foreach (var option in Question.Options)
+            {
+                <button class="btn" @onclick="() => OnAnswer.InvokeAsync(option)">@option</button>
+            }
+        </div>
+        @if (Question.AllowOther)
+        {
+            <div class="question-other">
+                <input class="input" @bind="_other" @bind:event="oninput" @onkeydown="OnKeyDown"
+                       placeholder="Or type your own answer" />
+                <button class="btn btn-primary" disabled="@string.IsNullOrWhiteSpace(_other)"
+                        @onclick="() => OnAnswer.InvokeAsync(_other)">Answer</button>
+            </div>
+        }
+        <div class="hitl-actions question-skip">
+            <button class="btn btn-sm" @onclick="() => OnAnswer.InvokeAsync(null)">Skip</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ReplQuestion Question { get; set; } = default!;
+    /// <summary>Called with the chosen or typed answer, or null to skip.</summary>
+    [Parameter] public EventCallback<string?> OnAnswer { get; set; }
+
+    private string _other = "";
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_other))
+            await OnAnswer.InvokeAsync(_other);
+    }
+}

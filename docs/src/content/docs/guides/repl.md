@@ -22,6 +22,12 @@ The chat's tools are confined to its workspace. When the agent wants to write a 
 command, the chat asks first, with the command or a diff of the file, and the request also appears
 on the [HITL](/fuseraft-web/guides/approvals/) page. **Stop** ends the current turn.
 
+## Questions
+
+When the agent is blocked on a decision that's yours to make, it asks a multiple-choice question
+in the chat. Pick an option, type your own answer if the question allows it, or **Skip** to let the
+agent use its best judgment. The reply waits until you do; **Stop** skips the question.
+
 ## Slash commands
 
 Slash commands such as `/model` or `/compact` go to the CLI, which handles them as it does in the

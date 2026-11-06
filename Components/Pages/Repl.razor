@@ -172,6 +172,12 @@ else
                 <ApprovalCard @key="req.Id" Request="req" ShowSource="false" />
             }
 
+            @if (session.Question is { } question)
+            {
+                <QuestionCard @key="question" Question="question"
+                              OnAnswer="answer => ReplService.AnswerQuestion(Current.User, session.Key, answer)" />
+            }
+
             @if (session.Status == ReplStatus.Thinking)
             {
                 <div class="repl-msg repl-msg-assistant repl-streaming">

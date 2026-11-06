@@ -137,6 +137,28 @@ public sealed class RelayTests : IAsyncDisposable
         Assert.Contains("e some stderr", replay);
     }
 
+    [Fact]
+    public void Replay_DropsAnsweredAndInterruptedQuestions()
+    {
+        string[] backlog =
+        [
+            """o {"type":"question","question":"a"}""",
+            """o {"type":"approval_request","command":"x"}""",
+            """i {"type":"question_response","answer":"yes"}""",
+            """o {"type":"question","question":"b"}""",
+            """i {"type":"interrupt"}""",
+            """o {"type":"question","question":"c"}""",
+        ];
+
+        var replay = RelayBridge.Replay(backlog).ToList();
+
+        Assert.DoesNotContain(replay, l => l.Contains("\"a\""));   // answered
+        Assert.DoesNotContain(replay, l => l.Contains("\"b\""));   // dismissed by the interrupt
+        Assert.DoesNotContain(replay, l => l.Contains("\"x\""));   // denied by the interrupt, not answered by "yes"
+        Assert.Contains(replay, l => l.Contains("\"c\""));         // still open
+        Assert.DoesNotContain(replay, l => l.Contains("question_response"));
+    }
+
     private sealed class Child(FakeBridge bridge, string stderr = "") : IRelayChild
     {
         public TextReader Output => bridge.Output;

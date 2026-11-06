@@ -168,6 +168,91 @@ public sealed class ReplServiceTests : IDisposable
     public void ParseVersion_ReadsTheRelease(string text, string? expected) =>
         Assert.Equal(expected is null ? null : Version.Parse(expected), fuseraft.Web.Services.Cli.FuseraftCli.ParseVersion(text));
 
+    private static object Question(bool allowOther = true) =>
+        new { type = "question", question = "Which database?", options = new[] { "Postgres", "SQLite" }, allowOther };
+
+    private async Task<(ReplService Repl, WebUser Bob, string Key, FakeBridge Bridge)> AskedAsync(bool allowOther = true)
+    {
+        var (repl, bob, key, bridge) = await ReplyInProgressAsync();
+        bridge.Send(Question(allowOther));
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Question is not null, "the question");
+        return (repl, bob, key, bridge);
+    }
+
+    [Fact]
+    public async Task Chats_OptInToQuestions()
+    {
+        var (_, _, _, _) = await ReplyInProgressAsync();
+        Assert.Equal("1", _cli.Environments[0]!["FUSERAFT_VSCODE_QUESTIONS"]);
+    }
+
+    [Fact]
+    public async Task Question_IsAnswered_WithAnOptionOrOwnText()
+    {
+        var (repl, bob, key, bridge) = await AskedAsync();
+        var q = repl.GetSession(bob, key)!.Question!;
+        Assert.Equal(["Postgres", "SQLite"], q.Options);
+        Assert.True(q.AllowOther);
+
+        repl.AnswerQuestion(_accounts.Alice, key, "MySQL"); // not her chat
+        repl.AnswerQuestion(bob, key, " DuckDB ");
+
+        Assert.Equal(["""{"type":"question_response","answer":"DuckDB"}"""],
+            bridge.InputLines.Where(l => l.Contains("question_response")));
+        var chat = repl.GetSession(bob, key)!;
+        Assert.Null(chat.Question);
+        Assert.Contains("DuckDB", chat.Messages[^1].Text);
+    }
+
+    [Fact]
+    public async Task Question_WithoutOther_OnlyTakesAnOption()
+    {
+        var (repl, bob, key, bridge) = await AskedAsync(allowOther: false);
+
+        repl.AnswerQuestion(bob, key, "DuckDB");
+        Assert.NotNull(repl.GetSession(bob, key)!.Question);
+
+        repl.AnswerQuestion(bob, key, "SQLite");
+        Assert.Contains(bridge.InputLines, l => l.Contains("question_response") && l.Contains("SQLite"));
+    }
+
+    [Fact]
+    public async Task Question_Skipped_SendsNull()
+    {
+        var (repl, bob, key, bridge) = await AskedAsync();
+
+        repl.AnswerQuestion(bob, key, null);
+
+        Assert.Contains("""{"type":"question_response","answer":null}""", bridge.InputLines);
+        Assert.StartsWith("Skipped", repl.GetSession(bob, key)!.Messages[^1].Text);
+    }
+
+    [Fact]
+    public async Task Stop_SkipsTheQuestion_BeforeInterrupting()
+    {
+        var (repl, bob, key, bridge) = await AskedAsync();
+
+        repl.CancelSession(bob, key);
+
+        await Wait.UntilAsync(() => bridge.InputLines.Any(l => l.Contains("interrupt")), "the interrupt");
+        var lines = bridge.InputLines.ToList();
+        var skipped = lines.FindIndex(l => l.Contains("question_response"));
+        Assert.InRange(skipped, 0, lines.FindIndex(l => l.Contains("interrupt")) - 1);
+        Assert.Null(repl.GetSession(bob, key)!.Question);
+    }
+
+    [Fact]
+    public async Task OpenChat_IsAdopted_WithItsOpenQuestion()
+    {
+        var bob = _accounts.Add("bob", roots: ["/w"]);
+        var repl = new ReplService(_profiles, _cli, _broker);
+        var tag = new fuseraft.Web.Services.Relay.BridgeTag { Kind = ReplService.Kind, OwnerId = bob.Id, Extra = { ["key"] = "k1" } };
+
+        repl.AdoptRunning(tag, new FakeBridge().Send(Ready()).Send(Question()), bob);
+
+        await Wait.UntilAsync(() => repl.GetSession(bob, "k1")!.Question is not null, "the open question");
+    }
+
     [Fact]
     public async Task NonAdmin_CantChatOutsideTheirWorkspaces()
     {

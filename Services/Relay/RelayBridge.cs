@@ -154,22 +154,29 @@ public sealed class RelayBridge : IBridgeProcess
 
     /// <summary>
     /// The backlog as a new server should see it. Answers go to the oldest open request, so the first N requests
-    /// were answered by the first N answers; those are dropped, as are requests an interrupt denied. What was typed becomes a <c>replayed_input</c> line.
+    /// were answered by the first N answers; those are dropped, as are requests an interrupt denied. Questions pair
+    /// with their own answers the same way. What was typed becomes a <c>replayed_input</c> line.
     /// </summary>
     internal static IEnumerable<string> Replay(IReadOnlyList<string> backlog)
     {
         var answered = new HashSet<int>();
         var open = new Queue<int>();
+        var openQuestions = new Queue<int>();
         for (var i = 0; i < backlog.Count; i++)
         {
             var entry = backlog[i];
             if (entry.Length < 2) continue;
             var type = TypeOf(entry[2..]);
             if (entry[0] == RelayLine.Output && type == "approval_request") open.Enqueue(i);
+            else if (entry[0] == RelayLine.Output && type == "question") openQuestions.Enqueue(i);
             else if (entry[0] == RelayLine.Input && type == "approval_response" && open.TryDequeue(out var req)) answered.Add(req);
-            // An interrupt denies whatever approval is still open.
+            else if (entry[0] == RelayLine.Input && type == "question_response" && openQuestions.TryDequeue(out var q)) answered.Add(q);
+            // An interrupt denies whatever approval is still open, and dismisses an open question.
             else if (entry[0] == RelayLine.Input && type == "interrupt")
+            {
                 while (open.TryDequeue(out var denied)) answered.Add(denied);
+                while (openQuestions.TryDequeue(out var dismissed)) answered.Add(dismissed);
+            }
         }
 
         for (var i = 0; i < backlog.Count; i++)
@@ -184,7 +191,7 @@ public sealed class RelayBridge : IBridgeProcess
 
             var body = entry.Length > 2 ? entry[2..] : "";
             var type = TypeOf(body);
-            if (type is "approval_response" or "interrupt") continue;
+            if (type is "approval_response" or "question_response" or "interrupt") continue;
             var text = type == "user_input" ? TextOf(body) : type is null ? body : null;
             if (text is null) continue;
             yield return $"{RelayLine.Input} " + JsonSerializer.Serialize(new { type = ReplayedInput, text, raw = type is null });
