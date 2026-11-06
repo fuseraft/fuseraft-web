@@ -46,5 +46,5 @@ This is also how to recover a locked-out admin: `passwd` them, or `add` a new ad
 
 ## `fuseraft-web relay`
 
-Used internally: fuseraft-web starts one relay per session and REPL chat, so they outlive the
+Used internally: fuseraft-web starts one relay per session and chat, so they outlive the
 server. You don't run it yourself. See [Restarts don't end work](/fuseraft-web/deploy/restarts/).

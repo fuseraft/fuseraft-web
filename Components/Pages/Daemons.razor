@@ -92,7 +92,7 @@ else
                 <tr class="clickable" @key="c.Id" @onclick="() => Select(c.Id)"
                     style="@(c.Id == _selected ? "background:var(--surface2)" : "")">
                     <td><strong>@c.Endpoint.Name</strong></td>
-                    <td class="mono small">
+                    <td class="mono small daemon-url">
                         @c.Endpoint.Url
                         @if (c.ReadOnly)
                         {

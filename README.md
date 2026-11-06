@@ -2,7 +2,7 @@
 
 <img src="wwwroot/fuseraft-banner.png" alt="fuseraft — an agent orchestration framework">
 
-A web UI for [fuseraft](https://github.com/fuseraft/fuseraft-cli). Run and watch agent orchestration sessions, chat with the fuseraft REPL, and approve what agents want to do, from a browser, with an account per person.
+A web UI for [fuseraft](https://github.com/fuseraft/fuseraft-cli). Run and watch agent orchestration sessions, chat with fuseraft, and approve what agents want to do, from a browser, with an account per person.
 
 **Documentation: [fuseraft.ai/fuseraft-web](https://fuseraft.ai/fuseraft-web/)**
 
@@ -32,7 +32,7 @@ It listens on `http://localhost:5000`, so only this machine can reach it until y
 
 - **Accounts.** Local passwords, [single sign-on](https://fuseraft.ai/fuseraft-web/guides/single-sign-on/) with any OpenID Connect provider, or both. Each account has its own fuseraft home, so its sessions, chats, memory, schedule and model profiles are its own. Read the [trust model](https://fuseraft.ai/fuseraft-web/guides/accounts/#users-and-admins) before sharing a server.
 - **[Sessions](https://fuseraft.ai/fuseraft-web/guides/sessions/).** Start multi-agent orchestration sessions, or generate one with the Orchestration Builder, and watch every turn and tool call stream in. Cancel and resume them.
-- **[REPL](https://fuseraft.ai/fuseraft-web/guides/repl/).** Chat with the same engine as `fuseraft repl`, confined to a workspace, with saved chats.
+- **[Chat](https://fuseraft.ai/fuseraft-web/guides/chat/).** Chat with the same engine as `fuseraft repl`, confined to a workspace, with saved chats.
 - **[Approvals](https://fuseraft.ai/fuseraft-web/guides/approvals/).** Every command, file write and handoff your sessions, chats and daemon tasks wait on, in one place.
 - **[Daemons](https://fuseraft.ai/fuseraft-web/guides/daemons/).** Attach to `fuseraft serve` on other machines over TLS, send it tasks and answer their approvals. Admins choose who may use each daemon.
 - **[Restarts don't end work](https://fuseraft.ai/fuseraft-web/deploy/restarts/).** Sessions and chats run in relay processes that outlive the server.

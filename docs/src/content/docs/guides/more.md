@@ -13,7 +13,7 @@ Credential Manager. Without one, they go in a mode-600 file in your fuseraft hom
 reaches only the processes you start:
 
 - as `FUSERAFT_PROFILE_{id}_KEY` for sessions, so `apiKeyEnvVar:` in a config resolves it;
-- as `FUSERAFT_API_KEY` for REPL chats.
+- as `FUSERAFT_API_KEY` for chats.
 
 ## Schedule
 

@@ -1,0 +1,8 @@
+@page "/repl"
+@inject NavigationManager Nav
+
+@* The Chat page was called REPL; old links and bookmarks still land on it. *@
+
+@code {
+    protected override void OnInitialized() => Nav.NavigateTo("/chat", replace: true);
+}

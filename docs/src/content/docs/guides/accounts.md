@@ -8,7 +8,7 @@ Every page needs a signed-in account. People sign in with a username and passwor
 
 ## Each account has its own fuseraft home
 
-Each account has its own `FUSERAFT_HOME`, so its sessions, REPL chats, memory, schedule and model
+Each account has its own `FUSERAFT_HOME`, so its sessions, chats, memory, schedule and model
 profiles are its own. Every fuseraft process an account starts runs against its home and gets only
 that account's profile keys.
 
@@ -22,7 +22,7 @@ before keeps its history. Later accounts get one under the
 |---|---|---|
 | Their own sessions, chats, memory, schedule, profiles | ✓ | ✓ |
 | Other people's sessions and approvals | | see and act on them |
-| Other people's REPL chats | | |
+| Other people's chats | | |
 | Workspaces | only under their workspace roots | anywhere |
 | Daemons | the ones an admin shares with them | all, and adds and connects them |
 | Users page | | ✓ |

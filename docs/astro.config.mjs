@@ -5,10 +5,12 @@ import starlight from '@astrojs/starlight';
 export default defineConfig({
 	site: 'https://fuseraft.ai',
 	base: '/fuseraft-web',
+	// Redirect targets don't get the base prepended; sources do.
+	redirects: { '/guides/repl': '/fuseraft-web/guides/chat/' },
 	integrations: [
 		starlight({
 			title: 'fuseraft-web',
-			description: 'fuseraft in the browser, shared by a team: sessions, REPL chats, approvals and remote daemons, with an account per person.',
+			description: 'fuseraft in the browser, shared by a team: sessions, chats, approvals and remote daemons, with an account per person.',
 			logo: { src: './src/assets/logo.svg' },
 			favicon: '/favicon.svg',
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/fuseraft/fuseraft-web' }],
@@ -26,7 +28,7 @@ export default defineConfig({
 						'guides/accounts',
 						'guides/single-sign-on',
 						'guides/sessions',
-						'guides/repl',
+						'guides/chat',
 						'guides/approvals',
 						'guides/daemons',
 						'guides/more',

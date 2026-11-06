@@ -1,17 +1,17 @@
-@page "/repl"
+@page "/chat"
 @implements IDisposable
 @inject ReplService ReplService
 @inject ModelProfileService ProfileService
 @inject HitlBroker Broker
 @inject WorkspaceService WorkspaceService
 
-<PageTitle>REPL — Fuseraft</PageTitle>
+<PageTitle>Chat — Fuseraft</PageTitle>
 
 <div class="page-header">
-    <h1>REPL</h1>
+    <h1>Chat</h1>
     @if (_activeSessionId is not null)
     {
-        <button class="btn" @onclick="CloseSession">← New Session</button>
+        <button class="btn" @onclick="CloseSession">← New Chat</button>
     }
 </div>
 
@@ -57,7 +57,7 @@
             </div>
             <div>
                 <button class="btn btn-primary" @onclick="StartSessionAsync" disabled="@_starting">
-                    @(_starting ? "Starting…" : "Start Session")
+                    @(_starting ? "Starting…" : "Start Chat")
                 </button>
             </div>
         </div>
@@ -65,12 +65,12 @@
         @if (_snapshots.Count > 0)
         {
             <div class="repl-history">
-                <h2>Recent Sessions</h2>
+                <h2>Recent Chats</h2>
                 <div class="table-wrapper">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Session</th>
+                                <th>ID</th>
                                 <th>Chat</th>
                                 <th>Model</th>
                                 <th>Turns</th>
@@ -107,7 +107,7 @@ else
     var session = ReplService.GetSession(Current.User, _activeSessionId!);
     if (session is null)
     {
-        <p class="muted">Session not found.</p>
+        <p class="muted">Chat not found.</p>
     }
     else
     {

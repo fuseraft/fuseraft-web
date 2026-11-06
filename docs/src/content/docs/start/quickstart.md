@@ -37,11 +37,11 @@ machine before, your sessions, chats and memory are already there.
 Open **Model Profiles** and add one: a model ID, an endpoint if your provider needs one, and an API
 key. The key goes in the OS keychain, and reaches only the fuseraft processes you start.
 
-## 4. Chat with the REPL
+## 4. Chat
 
-Open **REPL**, pick your profile and a workspace directory, and send a message. Replies stream in.
+Open **Chat**, pick your profile and a workspace directory, and send a message. Replies stream in.
 When the agent wants to write a file or run a command, the chat asks you first. See
-[REPL](/fuseraft-web/guides/repl/).
+[Chat](/fuseraft-web/guides/chat/).
 
 ## 5. Run a session
 
