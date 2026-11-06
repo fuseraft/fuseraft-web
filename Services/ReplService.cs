@@ -11,6 +11,9 @@ public enum ReplStatus { Idle, Thinking, Error }
 
 public sealed record ReplMessage(string Role, string Text, IReadOnlyList<string> ToolCalls, DateTimeOffset At);
 
+/// <summary>An <c>ask_user</c> question waiting for the chat's owner.</summary>
+public sealed record ReplQuestion(string Question, IReadOnlyList<string> Options, bool AllowOther);
+
 public sealed class ActiveReplSession : IDisposable
 {
     /// <summary>Stable dictionary key assigned at creation; never changes.</summary>
@@ -28,6 +31,8 @@ public sealed class ActiveReplSession : IDisposable
     public string?    StreamingText  { get; set; }
     public string?    StreamingTools { get; set; }
     public string?    Error          { get; set; }
+    /// <summary>The agent's open question; the reply waits until it's answered or skipped.</summary>
+    public ReplQuestion? Question    { get; set; }
     /// <summary>The chat takes messages and commands while it's busy (fuseraft v1.20.0 or later).</summary>
     public bool       InputWhileBusy { get; init; }
 
@@ -155,9 +160,10 @@ public sealed class ReplService : IDisposable
 
     private async Task SpawnAsync(WebUser user, string key, ActiveReplSession session, ModelProfile profile, List<string> args)
     {
+        // This page answers ask_user questions; without it the agent isn't given the tool.
+        var env = new Dictionary<string, string> { ["FUSERAFT_VSCODE_QUESTIONS"] = "1" };
         // Inject the profile's API key as FUSERAFT_API_KEY — same channel the VS Code
         // extension uses so the CLI picks it up in --vscode mode.
-        var env = new Dictionary<string, string>();
         if (await _profiles.For(user).GetKeyAsync(profile.Id) is { Length: > 0 } apiKey)
             env["FUSERAFT_API_KEY"] = apiKey;
 
@@ -256,6 +262,7 @@ public sealed class ReplService : IDisposable
                 // Still listed means no session_end arrived: the process died. Keep the chat on
                 // screen with the reason instead of silently dropping back to the start form.
                 _hitl.CancelSession(s.SessionId);
+                s.Question = null;
                 var exit = await bridge.WaitForExitAsync();
                 s.Status         = ReplStatus.Error;
                 s.Error          = $"fuseraft exited unexpectedly (exit {exit}). {bridge.StderrTail.Split('\n').LastOrDefault()}".Trim();
@@ -298,6 +305,15 @@ public sealed class ReplService : IDisposable
 
             case "approval_request":
                 s.Relay?.Handle(s.SessionId, root);
+                break;
+
+            case "question":
+                var options = new List<string>();
+                if (root.TryGetProperty("options", out var opts) && opts.ValueKind == JsonValueKind.Array)
+                    foreach (var o in opts.EnumerateArray())
+                        if (o.GetString() is { Length: > 0 } option) options.Add(option);
+                s.Question = new ReplQuestion(Str(root, "question") ?? "", options,
+                    !root.TryGetProperty("allowOther", out var ao) || ao.ValueKind != JsonValueKind.False);
                 break;
 
             case RelayBridge.ReplayedInput:
@@ -346,6 +362,7 @@ public sealed class ReplService : IDisposable
                 break;
 
             case "cancelled":
+                s.Question = null;
                 if (s.StreamingText is { Length: > 0 } partial)
                     s.Messages.Add(new ReplMessage("assistant", partial + "\n*(cancelled)*", [], DateTimeOffset.UtcNow));
                 s.Status        = ReplStatus.Idle;
@@ -418,6 +435,7 @@ public sealed class ReplService : IDisposable
                 break;
 
             case "session_end":
+                s.Question      = null;
                 s.Status        = ReplStatus.Idle;
                 s.StreamingText = null;
                 s.StreamingTools = null;
@@ -453,6 +471,21 @@ public sealed class ReplService : IDisposable
         WriteStdin(s, trimmed);
     }
 
+    /// <summary>Answers the open question; a null or blank <paramref name="answer"/> skips it.</summary>
+    public void AnswerQuestion(WebUser user, string key, string? answer)
+    {
+        if (GetSession(user, key) is not { Question: { } q } s) return;
+        answer = string.IsNullOrWhiteSpace(answer) ? null : answer.Trim();
+        if (answer is not null && !q.AllowOther && !q.Options.Contains(answer)) return;
+
+        s.Question = null;
+        s.Messages.Add(new ReplMessage("system",
+            answer is null ? $"Skipped: {q.Question}" : $"{q.Question}\n\n**You answered:** {answer}",
+            [], DateTimeOffset.UtcNow));
+        SessionChanged?.Invoke(key);
+        WriteQuestionResponse(s, answer);
+    }
+
     public void ClearSession(WebUser user, string key)
     {
         if (GetSession(user, key) is not { } s) return;
@@ -467,6 +500,12 @@ public sealed class ReplService : IDisposable
     {
         if (GetSession(user, key) is not { Relay: { } relay } s) return;
         _hitl.CancelSession(s.SessionId);
+        // Before v1.20.0 an interrupt left the question waiting for a line; skipping it first works on every version.
+        if (s.Question is not null)
+        {
+            s.Question = null;
+            WriteQuestionResponse(s, null);
+        }
         _ = relay.InterruptAsync();
     }
 
@@ -496,6 +535,12 @@ public sealed class ReplService : IDisposable
     private void WriteStdin(ActiveReplSession s, string text)
     {
         var json = JsonSerializer.Serialize(new { type = "user_input", text }, _jsonOpts);
+        try { s.Bridge?.Input.WriteLine(json); } catch { }
+    }
+
+    private static void WriteQuestionResponse(ActiveReplSession s, string? answer)
+    {
+        var json = JsonSerializer.Serialize(new { type = "question_response", answer }, _jsonOpts);
         try { s.Bridge?.Input.WriteLine(json); } catch { }
     }
 
