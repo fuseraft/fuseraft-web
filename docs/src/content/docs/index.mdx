@@ -18,9 +18,12 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 import { Image } from 'astro:assets';
-import daemons from '../../assets/daemons.png';
+import daemonsDark from '../../assets/daemons-dark.png';
+import daemonsLight from '../../assets/daemons-light.png';
 
-<Image src={daemons} alt="The Daemons page: a connected daemon asking to run npm test, with Approve and Deny buttons" class="screenshot" />
+{/* One screenshot per theme, with the classes Starlight's own hero uses to switch them. */}
+<Image src={daemonsDark} alt="The Daemons page: a connected daemon asking to run npm test, with Approve and Deny buttons" class="screenshot light:sl-hidden" />
+<Image src={daemonsLight} alt="The Daemons page: a connected daemon asking to run npm test, with Approve and Deny buttons" class="screenshot dark:sl-hidden" />
 
 <CardGrid stagger>
 	<Card title="An account per person" icon="seti:lock">

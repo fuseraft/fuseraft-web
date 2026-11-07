@@ -1,6 +1,6 @@
 # fuseraft-web
 
-<img src="wwwroot/fuseraft-banner.png" alt="fuseraft — an agent orchestration framework">
+<img src="wwwroot/fuseraft-banner.png" alt="fuseraft — model-agnostic coding agent">
 
 A web UI for [fuseraft](https://github.com/fuseraft/fuseraft-cli). Run and watch agent orchestration sessions, chat with fuseraft, and approve what agents want to do, from a browser, with an account per person.
 
@@ -28,7 +28,10 @@ It listens on `http://localhost:5000`, so only this machine can reach it until y
 
 ## What it does
 
-<img src="docs/src/assets/daemons.png" alt="The Daemons page: a connected daemon asking to run npm test, with Approve and Deny buttons">
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/src/assets/daemons-light.png">
+  <img src="docs/src/assets/daemons-dark.png" alt="The Daemons page: a connected daemon asking to run npm test, with Approve and Deny buttons">
+</picture>
 
 - **Accounts.** Local passwords, [single sign-on](https://fuseraft.ai/fuseraft-web/guides/single-sign-on/) with any OpenID Connect provider, or both. Each account has its own fuseraft home, so its sessions, chats, memory, schedule and model profiles are its own. Read the [trust model](https://fuseraft.ai/fuseraft-web/guides/accounts/#users-and-admins) before sharing a server.
 - **[Sessions](https://fuseraft.ai/fuseraft-web/guides/sessions/).** Start multi-agent orchestration sessions, or generate one with the Orchestration Builder, and watch every turn and tool call stream in. Cancel and resume them.
