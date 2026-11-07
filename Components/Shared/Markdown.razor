@@ -1,17 +1,50 @@
 @using Markdig
+@using Markdig.Syntax
+@using Markdig.Syntax.Inlines
 @using Microsoft.AspNetCore.Components
 
 <div class="md">@((MarkupString)_html)</div>
 
 @code {
+    // What's rendered here is a model's reply, which can be steered by whatever the model reads, so it
+    // gets no HTML and no extension that adds attributes or embeds (generic attributes, media links).
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
-        .UseAdvancedExtensions()
+        .UsePipeTables()
+        .UseGridTables()
+        .UseEmphasisExtras()
+        .UseListExtras()
+        .UseTaskLists()
+        .UseDefinitionLists()
+        .UseFootnotes()
+        .UseAbbreviations()
+        .UseAutoLinks()
+        .DisableHtml()
         .Build();
 
     [Parameter, EditorRequired] public string Text { get; set; } = "";
 
     private string _html = "";
 
-    protected override void OnParametersSet() =>
-        _html = Markdig.Markdown.ToHtml(Text ?? "", Pipeline);
+    protected override void OnParametersSet() => _html = Render(Text);
+
+    /// <summary>The reply as HTML, with any link or image that isn't http(s), mailto or relative left without a target.</summary>
+    internal static string Render(string? text)
+    {
+        var doc = Markdig.Markdown.Parse(text ?? "", Pipeline);
+        foreach (var link in doc.Descendants<LinkInline>())
+            if (!IsSafeUrl(link.Url)) link.Url = "";
+        foreach (var link in doc.Descendants<AutolinkInline>())
+            if (!IsSafeUrl(link.Url)) link.Url = "";
+        return doc.ToHtml(Pipeline);
+    }
+
+    internal static bool IsSafeUrl(string? url)
+    {
+        // Browsers skip whitespace and control characters in a scheme, so "java\tscript:" still runs.
+        var u = new string((url ?? "").Where(c => c > ' ').ToArray());
+        var colon = u.IndexOf(':');
+        var path  = u.IndexOfAny(['/', '?', '#']);
+        if (colon < 0 || (path >= 0 && path < colon)) return true;
+        return u[..colon].ToLowerInvariant() is "http" or "https" or "mailto";
+    }
 }
