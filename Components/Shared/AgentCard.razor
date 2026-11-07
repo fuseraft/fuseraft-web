@@ -1,7 +1,7 @@
 <div class="agent-card @(IsUser ? "user-card" : "") @(Message.IsOrchestratorCorrection ? "orchestrator-card" : "")">
     <div class="card-header">
         <span class="agent-pill"
-              style="background: @ColorHex22; color: @ColorHex;">
+              style="--agent: @AgentColor">
             @Message.AgentName
         </span>
         <span class="turn-meta muted">Turn @(Message.TurnIndex + 1)</span>
@@ -54,20 +54,17 @@
         "#c07cf8", "#f87ca7", "#7cf8e0", "#f8b87c",
     ];
 
-    private string ColorHex
+    // The stylesheet mixes this with the text color, so it reads on the light and the dark palette.
+    private string AgentColor
     {
         get
         {
-            if (IsUser) return "#d29922";
+            if (IsUser) return "var(--warn)";
             var h = 0;
             foreach (var c in (Message.AgentName ?? "?")) h = (h * 31 + c) & 0xffff;
             return Palette[h % Palette.Length];
         }
     }
-
-    private string ColorHex22 => IsUser
-        ? "rgba(210,153,34,.12)"
-        : ColorHex + "22";
 
     private string Rendered
     {

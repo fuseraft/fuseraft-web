@@ -26,5 +26,12 @@
 	max-width: 100%;
 	height: auto;
 	margin: 0 auto 2rem;
+	border: 1px solid var(--sl-color-gray-5);
 	border-radius: 0.5rem;
+}
+
+/* Starlight's light:/dark:sl-hidden sit in its cascade layer, so the display above would beat them. */
+[data-theme='light'] .screenshot.light\:sl-hidden,
+[data-theme='dark'] .screenshot.dark\:sl-hidden {
+	display: none;
 }
