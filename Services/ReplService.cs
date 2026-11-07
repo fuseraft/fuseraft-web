@@ -304,7 +304,8 @@ public sealed class ReplService : IDisposable
                 break;
 
             case "approval_request":
-                s.Relay?.Handle(s.SessionId, root);
+                if (s.Relay?.Handle(s.SessionId, root) is { } request)
+                    _ = NoteAnswerAsync(key, s, request);
                 break;
 
             case "question":
@@ -469,6 +470,33 @@ public sealed class ReplService : IDisposable
 
         SessionChanged?.Invoke(key);
         WriteStdin(s, trimmed);
+    }
+
+    /// <summary>Leaves a line in the chat once an approval is answered, since its card disappears.</summary>
+    private async Task NoteAnswerAsync(string key, ActiveReplSession s, PendingApproval request)
+    {
+        var approved = await request.Tcs.Task;
+        s.Messages.Add(new ReplMessage("system", ApprovalNote(request, approved), [], DateTimeOffset.UtcNow));
+        SessionChanged?.Invoke(key);
+    }
+
+    internal static string ApprovalNote(PendingApproval r, bool approved)
+    {
+        var what = r.Kind switch
+        {
+            "shell_command"  => $"`{OneLine(r.Command)}`",
+            "file_write"     => $"{r.Action ?? "write_file"} `{r.Path}`",
+            "tool_action"    => $"`{r.Plugin}.{r.Action}`",
+            "route_approval" => $"the handoff from {r.SourceAgent} to {r.TargetAgent}",
+            _                => r.Kind,
+        };
+        return $"{(approved ? "✓ Approved" : "✕ Denied")} {what}";
+    }
+
+    private static string OneLine(string? s)
+    {
+        var flat = (s ?? "").ReplaceLineEndings(" ").Replace('`', '\'').Trim();
+        return flat.Length <= 120 ? flat : flat[..120] + "…";
     }
 
     /// <summary>Answers the open question; a null or blank <paramref name="answer"/> skips it.</summary>

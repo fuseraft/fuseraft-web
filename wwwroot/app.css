@@ -35,6 +35,11 @@ html, body {
 }
 
 a { color: var(--accent); text-decoration: none; }
+
+/* Blazor focuses each page's h1 after navigation so screen readers announce it; no need to outline it. */
+h1:focus { outline: none; }
+
+.icon { flex-shrink: 0; }
 a:hover { text-decoration: underline; }
 
 code, pre, .mono { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', Menlo, Consolas, monospace; }
@@ -62,6 +67,7 @@ code, pre, .mono { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', Menlo, 
   display: flex;
   flex-direction: column;
   padding: 0 0 16px;
+  min-height: 0;
 }
 
 .nav-logo {
@@ -76,7 +82,7 @@ code, pre, .mono { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', Menlo, 
 .logo-icon { width: 28px; height: 28px; flex-shrink: 0; filter: invert(1); }
 .logo-text  { font-weight: 700; font-size: 15px; color: var(--text); letter-spacing: -.3px; }
 
-.nav-links { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+.nav-links { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; overflow-y: auto; }
 
 .nav-item {
   display: flex;
@@ -93,7 +99,6 @@ code, pre, .mono { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', Menlo, 
 .nav-item:hover { background: var(--surface2); color: var(--text); text-decoration: none; }
 .nav-item.active { background: var(--accent-dim); color: var(--accent); }
 
-.nav-icon { font-style: normal; font-size: 14px; width: 16px; text-align: center; }
 
 .nav-badge {
   margin-left: auto;
@@ -253,7 +258,7 @@ code, pre, .mono { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', Menlo, 
 .table-wrapper {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .data-table {
@@ -1889,8 +1894,87 @@ code, pre, .mono { font-family: 'Cascadia Code', 'Fira Code', 'SF Mono', Menlo, 
 }
 .nav-user a { color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-user form { margin: 0; }
-.nav-section { padding: 12px 16px 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.nav-section { padding: 14px 12px 4px; font-size: 11px; font-weight: 600; color: var(--muted); opacity: .75; text-transform: uppercase; letter-spacing: .05em; }
 .owner-pill { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 0 6px; }
 .section-title { font-size: 14px; margin: 24px 0 8px; }
 .users-table td { vertical-align: top; }
 .users-roots { width: 100%; min-height: 60px; font-family: var(--mono, monospace); font-size: 12px; }
+
+/* ===== Panels ===== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+}
+
+/* .card-body alone styles transcript cards, which keep their text's line breaks; a form panel mustn't. */
+.card > .card-body { padding: 18px 20px; font-size: 14px; line-height: 1.5; white-space: normal; }
+.card > .card-body code { overflow-wrap: anywhere; }
+
+/* ===== Chat: the message box stays at the bottom ===== */
+.main-content:has(.repl-view) { display: flex; flex-direction: column; padding-bottom: 0; }
+.repl-view { flex: 1; display: flex; flex-direction: column; }
+.repl-view .repl-transcript { flex: 1; }
+.repl-dock { position: sticky; bottom: 0; background: var(--bg); padding-bottom: 20px; }
+.repl-session-cwd { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repl-send-hint { margin-left: auto; }
+
+/* ===== Phones: the sidebar becomes a drawer ===== */
+.topbar, .nav-backdrop, .nav-close { display: none; }
+
+@media (max-width: 760px) {
+  .shell { flex-direction: column; }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .topbar .logo-icon { width: 22px; height: 22px; }
+  .topbar-menu, .nav-close {
+    display: flex;
+    background: none;
+    border: none;
+    color: var(--text);
+    padding: 6px;
+    cursor: pointer;
+    border-radius: var(--radius);
+  }
+  .topbar-menu { margin-left: -6px; }
+  .topbar-badge { margin-left: auto; text-decoration: none; }
+  .topbar-badge:hover { text-decoration: none; }
+  .nav-close { margin-left: auto; color: var(--muted); }
+
+  .sidenav {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    width: min(280px, 85vw);
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+  }
+  .sidenav.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.5); }
+
+  .nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: rgba(0,0,0,.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s;
+  }
+  .nav-backdrop.open { opacity: 1; pointer-events: auto; }
+
+  .main-content { padding: 20px 16px 32px; }
+  .page-header { flex-wrap: wrap; }
+  .page-header h1 { font-size: 20px; }
+  .repl-dock { padding-bottom: 12px; }
+  .repl-send-hint { display: none; }
+}
