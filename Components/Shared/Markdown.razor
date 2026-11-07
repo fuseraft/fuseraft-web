@@ -18,6 +18,8 @@
         .UseFootnotes()
         .UseAbbreviations()
         .UseAutoLinks()
+        // Models put one item per line without Markdown's blank lines or trailing spaces; keep their lines.
+        .UseSoftlineBreakAsHardlineBreak()
         .DisableHtml()
         .Build();
 

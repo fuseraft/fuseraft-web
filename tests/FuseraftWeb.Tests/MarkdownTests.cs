@@ -55,6 +55,10 @@ public class MarkdownTests
         Assert.Equal(safe, Markdown.IsSafeUrl(url));
 
     [Fact]
+    public void SingleLineBreaks_AreKept() =>
+        Assert.Contains("1<br />\n2", Markdown.Render("1\n2"));
+
+    [Fact]
     public void Formatting_StillRenders()
     {
         var html = Markdown.Render("**bold** ~~gone~~ `code`\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- [x] done\n\n[docs](https://fuseraft.ai) and https://fuseraft.ai/web");

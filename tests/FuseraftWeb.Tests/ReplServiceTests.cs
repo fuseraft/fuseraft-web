@@ -85,6 +85,44 @@ public sealed class ReplServiceTests : IDisposable
         Assert.Equal("r2", _broker.GetPending(bob).Single().SessionId);
     }
 
+    [Fact]
+    public async Task AnsweredApproval_LeavesANoteInTheChat()
+    {
+        var (repl, bob, key, bridge) = await ReplyInProgressAsync();
+        bridge.Send(new { type = "approval_request", kind = "shell_command", command = "npm test" });
+        await Wait.UntilAsync(() => _broker.GetPending(bob).Count == 1, "the approval");
+
+        _broker.Respond(bob, _broker.GetPending(bob).Single().Id, true);
+
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Messages.Any(m => m.Role == "system"), "the note");
+        Assert.Equal("✓ Approved `npm test`", repl.GetSession(bob, key)!.Messages[^1].Text);
+    }
+
+    [Theory]
+    [InlineData("file_write", false, "✕ Denied patch_file `/w/a.txt`")]
+    [InlineData("tool_action", true, "✓ Approved `Http.get`")]
+    [InlineData("route_approval", false, "✕ Denied the handoff from Planner to Developer")]
+    public void ApprovalNote_NamesWhatWasAsked(string kind, bool approved, string expected)
+    {
+        var request = new PendingApproval
+        {
+            SessionId = "r1", Kind = kind, Action = kind == "file_write" ? "patch_file" : "get",
+            Path = "/w/a.txt", Plugin = "Http", SourceAgent = "Planner", TargetAgent = "Developer",
+        };
+        Assert.Equal(expected, ReplService.ApprovalNote(request, approved));
+    }
+
+    [Fact]
+    public void ApprovalNote_KeepsACommandToOneShortLine()
+    {
+        var request = new PendingApproval { SessionId = "r1", Kind = "shell_command", Command = "echo `a`\n" + new string('x', 200) };
+
+        var note = ReplService.ApprovalNote(request, true);
+
+        Assert.StartsWith("✓ Approved `echo 'a' xxx", note);
+        Assert.EndsWith("…`", note);
+    }
+
     private async Task<(ReplService Repl, WebUser Bob, string Key, FakeBridge Bridge)> ReplyInProgressAsync()
     {
         var bob = _accounts.Add("bob", roots: ["/w"]);

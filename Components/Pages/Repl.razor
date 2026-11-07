@@ -111,115 +111,123 @@ else
     }
     else
     {
-        <div class="repl-session-bar">
-            <code class="repl-session-id">@session.SessionId</code>
-            <span class="muted small">@session.ModelId</span>
-            @if (session.Status == ReplStatus.Thinking)
-            {
-                @if (session.StreamingTools is not null)
+        <div class="repl-view">
+            <div class="repl-session-bar">
+                <code class="repl-session-id">@session.SessionId</code>
+                <span class="muted small">@session.ModelId</span>
+                @if (session.Cwd is { Length: > 0 } cwd)
                 {
-                    <span class="muted small">⚙ @session.StreamingTools</span>
+                    <span class="muted small mono repl-session-cwd" title="@cwd">@(Path.GetFileName(cwd.TrimEnd('/', '\\')) is { Length: > 0 } dir ? dir : cwd)</span>
                 }
-                else
-                {
-                    <span class="muted small">thinking…</span>
-                }
-            }
-            <div style="margin-left:auto;display:flex;gap:6px">
-                <button class="btn btn-sm" @onclick="Clear"
-                        disabled="@(session.Status == ReplStatus.Thinking)">
-                    Clear
-                </button>
-                <button class="btn btn-sm" @onclick="CloseSession">Close</button>
-            </div>
-        </div>
-
-        @if (session.Error is not null)
-        {
-            <div class="error-banner">@session.Error</div>
-        }
-
-        <div class="repl-transcript">
-            @foreach (var msg in session.Messages.ToList())
-            {
-                <div class="repl-msg repl-msg-@msg.Role">
-                    @if (msg.Role != "system")
-                    {
-                        <div class="repl-msg-role">@(msg.Role == "user" ? "You" : "Assistant")</div>
-                    }
-                    @if (msg.Role == "assistant" || msg.Role == "system")
-                    {
-                        <Markdown Text="@msg.Text" />
-                    }
-                    else
-                    {
-                        <div class="repl-msg-text">@msg.Text</div>
-                    }
-                    @if (msg.ToolCalls.Count > 0)
-                    {
-                        <div class="repl-tool-chips">
-                            @foreach (var tool in msg.ToolCalls)
-                            {
-                                <span class="tool-call-chip"><span class="tool-call-name">@tool</span></span>
-                            }
-                        </div>
-                    }
-                </div>
-            }
-
-            @foreach (var req in Broker.GetPending(Current.User, session.SessionId).Where(r => r.Source == ApprovalSource.Repl))
-            {
-                <ApprovalCard @key="req.Id" Request="req" ShowSource="false" />
-            }
-
-            @if (session.Question is { } question)
-            {
-                <QuestionCard @key="question" Question="question"
-                              OnAnswer="answer => ReplService.AnswerQuestion(Current.User, session.Key, answer)" />
-            }
-
-            @if (session.Status == ReplStatus.Thinking)
-            {
-                <div class="repl-msg repl-msg-assistant repl-streaming">
-                    <div class="repl-msg-role">Assistant</div>
-                    @if (!string.IsNullOrEmpty(session.StreamingText))
-                    {
-                        <Markdown Text="@session.StreamingText" />
-                        <span class="repl-cursor">▋</span>
-                    }
-                    else
-                    {
-                        <div class="repl-thinking-dots">
-                            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
-
-        <div class="repl-input-area">
-            <textarea class="repl-textarea"
-                      value="@_input"
-                      @oninput="@(e => _input = e.Value?.ToString() ?? "")"
-                      @onkeydown="OnKeyDown"
-                      placeholder="@(session.Status == ReplStatus.Thinking && session.InputWhileBusy
-                                     ? "Add to the reply in progress… (Ctrl+Enter to send)"
-                                     : "Type a message… (Ctrl+Enter to send)")"
-                      disabled="@(session.Status == ReplStatus.Thinking && !session.InputWhileBusy)"
-                      rows="3"></textarea>
-            <div class="repl-input-actions">
                 @if (session.Status == ReplStatus.Thinking)
                 {
-                    <button class="btn btn-danger" @onclick="Cancel">Stop</button>
+                    @if (session.StreamingTools is not null)
+                    {
+                        <span class="muted small">⚙ @session.StreamingTools</span>
+                    }
+                    else
+                    {
+                        <span class="muted small">thinking…</span>
+                    }
                 }
-                @if (session.Status != ReplStatus.Thinking || session.InputWhileBusy)
-                {
-                    <button class="btn btn-primary" @onclick="Send"
-                            disabled="@string.IsNullOrWhiteSpace(_input)">
-                        Send
+                <div style="margin-left:auto;display:flex;gap:6px">
+                    <button class="btn btn-sm" @onclick="Clear"
+                            disabled="@(session.Status == ReplStatus.Thinking)">
+                        Clear
                     </button>
+                    <button class="btn btn-sm" @onclick="CloseSession">Close</button>
+                </div>
+            </div>
+
+            @if (session.Error is not null)
+            {
+                <div class="error-banner">@session.Error</div>
+            }
+
+            <div class="repl-transcript">
+                @foreach (var msg in session.Messages.ToList())
+                {
+                    <div class="repl-msg repl-msg-@msg.Role">
+                        @if (msg.Role != "system")
+                        {
+                            <div class="repl-msg-role">@(msg.Role == "user" ? "You" : "Assistant")</div>
+                        }
+                        @if (msg.Role == "assistant" || msg.Role == "system")
+                        {
+                            <Markdown Text="@msg.Text" />
+                        }
+                        else
+                        {
+                            <div class="repl-msg-text">@msg.Text</div>
+                        }
+                        @if (msg.ToolCalls.Count > 0)
+                        {
+                            <div class="repl-tool-chips">
+                                @foreach (var tool in msg.ToolCalls)
+                                {
+                                    <span class="tool-call-chip"><span class="tool-call-name">@tool</span></span>
+                                }
+                            </div>
+                        }
+                    </div>
                 }
-                <span class="muted small" style="margin-left:auto">Ctrl+Enter to send</span>
+
+                @foreach (var req in Broker.GetPending(Current.User, session.SessionId).Where(r => r.Source == ApprovalSource.Repl))
+                {
+                    <ApprovalCard @key="req.Id" Request="req" ShowSource="false" />
+                }
+
+                @if (session.Question is { } question)
+                {
+                    <QuestionCard @key="question" Question="question"
+                                  OnAnswer="answer => ReplService.AnswerQuestion(Current.User, session.Key, answer)" />
+                }
+
+                @if (session.Status == ReplStatus.Thinking)
+                {
+                    <div class="repl-msg repl-msg-assistant repl-streaming">
+                        <div class="repl-msg-role">Assistant</div>
+                        @if (!string.IsNullOrEmpty(session.StreamingText))
+                        {
+                            <Markdown Text="@session.StreamingText" />
+                            <span class="repl-cursor">▋</span>
+                        }
+                        else
+                        {
+                            <div class="repl-thinking-dots">
+                                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div class="repl-dock">
+                <div class="repl-input-area">
+                    <textarea class="repl-textarea"
+                              value="@_input"
+                              @oninput="@(e => _input = e.Value?.ToString() ?? "")"
+                              @onkeydown="OnKeyDown"
+                              placeholder="@(session.Status == ReplStatus.Thinking && session.InputWhileBusy
+                                             ? "Add to the reply in progress…"
+                                             : "Message fuseraft…")"
+                              disabled="@(session.Status == ReplStatus.Thinking && !session.InputWhileBusy)"
+                              rows="3"></textarea>
+                    <div class="repl-input-actions">
+                        @if (session.Status == ReplStatus.Thinking)
+                        {
+                            <button class="btn btn-danger" @onclick="Cancel">Stop</button>
+                        }
+                        @if (session.Status != ReplStatus.Thinking || session.InputWhileBusy)
+                        {
+                            <button class="btn btn-primary" @onclick="Send"
+                                    disabled="@string.IsNullOrWhiteSpace(_input)">
+                                Send
+                            </button>
+                        }
+                        <span class="muted small repl-send-hint">Enter to send · Shift+Enter for a new line</span>
+                    </div>
+                </div>
             </div>
         </div>
     }
@@ -340,9 +348,10 @@ else
             ReplService.CloseSession(Current.User, id);
     }
 
+    // app.js keeps the newline out of the box and holds back the Enter that ends an IME composition.
     private void OnKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && (e.CtrlKey || e.MetaKey) && !string.IsNullOrWhiteSpace(_input))
+        if (e.Key == "Enter" && !e.ShiftKey && !e.AltKey)
             Send();
     }
 

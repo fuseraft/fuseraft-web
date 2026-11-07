@@ -1,74 +1,86 @@
 @implements IDisposable
 @inject HitlBroker Broker
 @inject DaemonService Daemons
+@inject NavigationManager Nav
 
-<nav class="sidenav">
+@* On a phone the sidebar is a drawer, opened from this bar. *@
+<header class="topbar">
+    <button class="topbar-menu" @onclick="() => _open = true" aria-label="Open navigation">
+        <Icon Name="menu" />
+    </button>
+    <img src="fuseraft.svg" class="logo-icon" alt="" />
+    <span class="logo-text">fuseraft</span>
+    @if (_pendingCount > 0)
+    {
+        <a href="/hitl" class="nav-badge topbar-badge" title="Pending approvals">@_pendingCount</a>
+    }
+</header>
+
+<div class="nav-backdrop @(_open ? "open" : "")" @onclick="() => _open = false"></div>
+
+<nav class="sidenav @(_open ? "open" : "")">
     <div class="nav-logo">
         <img src="fuseraft.svg" class="logo-icon" alt="fuseraft" />
         <span class="logo-text">fuseraft</span>
+        <button class="nav-close" @onclick="() => _open = false" aria-label="Close navigation">
+            <Icon Name="close" />
+        </button>
     </div>
 
     <div class="nav-links">
         <NavLink href="/" Match="NavLinkMatch.All" class="nav-item">
-            <span class="nav-icon">⊞</span>
-            <span>Dashboard</span>
-        </NavLink>
-        <NavLink href="/sessions" class="nav-item">
-            <span class="nav-icon">▶</span>
-            <span>Sessions</span>
-        </NavLink>
-        <NavLink href="/orchestration/builder" class="nav-item">
-            <span class="nav-icon">⬡</span>
-            <span>Builder</span>
-        </NavLink>
-        @if (Current.User.IsAdmin || Daemons.For(Current.User).Count > 0)
-        {
-            <NavLink href="/daemons" class="nav-item">
-                <span class="nav-icon">⇄</span>
-                <span>Daemons</span>
-            </NavLink>
-        }
-        <NavLink href="/schedule" class="nav-item">
-            <span class="nav-icon">⏱</span>
-            <span>Schedule</span>
-        </NavLink>
-        <NavLink href="/plugins" class="nav-item">
-            <span class="nav-icon">🔌</span>
-            <span>Plugins</span>
-        </NavLink>
-        <NavLink href="/context" class="nav-item">
-            <span class="nav-icon">📂</span>
-            <span>Context</span>
-        </NavLink>
-        <NavLink href="/configs" class="nav-item">
-            <span class="nav-icon">✓</span>
-            <span>Configs</span>
-        </NavLink>
-        <NavLink href="/memory" class="nav-item">
-            <span class="nav-icon">◈</span>
-            <span>Memory</span>
-        </NavLink>
-        <NavLink href="/model-profiles" class="nav-item">
-            <span class="nav-icon">⊙</span>
-            <span>Profiles</span>
+            <Icon Name="dashboard" /><span>Dashboard</span>
         </NavLink>
         <NavLink href="/chat" class="nav-item">
-            <span class="nav-icon">⌨</span>
-            <span>Chat</span>
+            <Icon Name="chat" /><span>Chat</span>
+        </NavLink>
+        <NavLink href="/sessions" class="nav-item">
+            <Icon Name="sessions" /><span>Sessions</span>
         </NavLink>
         <NavLink href="/hitl" class="nav-item">
-            <span class="nav-icon">👤</span>
-            <span>HITL</span>
+            <Icon Name="approvals" /><span>HITL</span>
             @if (_pendingCount > 0)
             {
                 <span class="nav-badge">@_pendingCount</span>
             }
         </NavLink>
+
+        <div class="nav-section">Automation</div>
+        <NavLink href="/schedule" class="nav-item">
+            <Icon Name="schedule" /><span>Schedule</span>
+        </NavLink>
+        @if (Current.User.IsAdmin || Daemons.For(Current.User).Count > 0)
+        {
+            <NavLink href="/daemons" class="nav-item">
+                <Icon Name="daemons" /><span>Daemons</span>
+            </NavLink>
+        }
+
+        <div class="nav-section">Configure</div>
+        <NavLink href="/orchestration/builder" class="nav-item">
+            <Icon Name="builder" /><span>Builder</span>
+        </NavLink>
+        <NavLink href="/configs" class="nav-item">
+            <Icon Name="configs" /><span>Configs</span>
+        </NavLink>
+        <NavLink href="/context" class="nav-item">
+            <Icon Name="context" /><span>Context</span>
+        </NavLink>
+        <NavLink href="/plugins" class="nav-item">
+            <Icon Name="plugins" /><span>Plugins</span>
+        </NavLink>
+        <NavLink href="/memory" class="nav-item">
+            <Icon Name="memory" /><span>Memory</span>
+        </NavLink>
+
+        <div class="nav-section">Settings</div>
+        <NavLink href="/model-profiles" class="nav-item">
+            <Icon Name="profiles" /><span>Profiles</span>
+        </NavLink>
         @if (Current.User.IsAdmin)
         {
             <NavLink href="/users" class="nav-item">
-                <span class="nav-icon">☺</span>
-                <span>Users</span>
+                <Icon Name="users" /><span>Users</span>
             </NavLink>
         }
     </div>
@@ -83,16 +95,25 @@
 </nav>
 
 @code {
-    private int _pendingCount;
+    private int  _pendingCount;
+    private bool _open;
 
     protected override void OnInitialized()
     {
         _pendingCount = Broker.GetPending(Current.User).Count;
         Broker.PendingChanged += OnPendingChanged;
+        Nav.LocationChanged   += OnLocationChanged;
     }
 
     private void OnPendingChanged() =>
         InvokeAsync(() => { _pendingCount = Broker.GetPending(Current.User).Count; StateHasChanged(); });
 
-    public void Dispose() => Broker.PendingChanged -= OnPendingChanged;
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        InvokeAsync(() => { _open = false; StateHasChanged(); });
+
+    public void Dispose()
+    {
+        Broker.PendingChanged -= OnPendingChanged;
+        Nav.LocationChanged   -= OnLocationChanged;
+    }
 }
