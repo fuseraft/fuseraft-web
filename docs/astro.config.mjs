@@ -30,6 +30,7 @@ export default defineConfig({
 						'guides/sessions',
 						'guides/chat',
 						'guides/approvals',
+						'guides/notifications',
 						'guides/daemons',
 						'guides/more',
 					],

@@ -14,6 +14,8 @@ public sealed class HitlBroker
     private readonly ConcurrentDictionary<Guid, PendingApproval> _pending = new();
 
     public event Action? PendingChanged;
+    /// <summary>Fired once for each new request, after <see cref="PendingChanged"/>.</summary>
+    public event Action<PendingApproval>? Added;
 
     public IReadOnlyCollection<PendingApproval> GetPending() =>
         _pending.Values.OrderBy(p => p.Created).ToList();
@@ -38,6 +40,7 @@ public sealed class HitlBroker
     {
         _pending[request.Id] = request;
         PendingChanged?.Invoke();
+        Added?.Invoke(request);
         return request;
     }
 

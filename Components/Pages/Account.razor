@@ -3,6 +3,7 @@
 @inject UserStore Users
 @inject IOptions<AuthOptions> Auth
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @using Microsoft.Extensions.Options
 
 <PageTitle>Account — Fuseraft</PageTitle>
@@ -33,6 +34,52 @@
                 }
             }
         </div>
+    </div>
+</div>
+
+<h2 class="section-title">Notifications</h2>
+<div class="card" style="max-width:560px">
+    <div class="card-body">
+        @if (_notify is null)
+        {
+            <span class="muted">Loading…</span>
+        }
+        else
+        {
+            <div class="form-group">
+                <div class="form-label">Desktop notifications</div>
+                @if (!_notify.Supported)
+                {
+                    <span class="muted">This browser can't show them.</span>
+                }
+                else if (!_notify.Secure)
+                {
+                    <span class="muted">Browsers show them only for sites served over HTTPS (or localhost).</span>
+                }
+                else if (_notify.Permission == "denied")
+                {
+                    <span class="muted">Blocked for this site. Allow notifications in your browser's site settings, then reload.</span>
+                }
+                else if (_notify.Desktop)
+                {
+                    <button class="btn btn-sm" @onclick="() => SetAsync(nameof(NotifyState.Desktop), false)">Turn off</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm btn-primary" @onclick="EnableDesktopAsync">Turn on</button>
+                }
+                <div class="form-hint">Shown while you're in another tab or app. In this tab you'll get a note in the corner instead.</div>
+            </div>
+            <div class="form-group">
+                <div class="form-label">Tell me when</div>
+                <div class="notify-options">
+                    <label><input type="checkbox" checked="@_notify.Attention" @onchange="e => SetAsync(nameof(NotifyState.Attention), e.Value)" /> something needs my approval or answer</label>
+                    <label><input type="checkbox" checked="@_notify.Results" @onchange="e => SetAsync(nameof(NotifyState.Results), e.Value)" /> a session or daemon task finishes or fails</label>
+                    <label><input type="checkbox" checked="@_notify.Replies" @onchange="e => SetAsync(nameof(NotifyState.Replies), e.Value)" /> a chat replies</label>
+                </div>
+                <div class="form-hint">These settings are kept in this browser.</div>
+            </div>
+        }
     </div>
 </div>
 
@@ -87,6 +134,22 @@
 @code {
     private string _current = "", _new = "", _confirm = "";
     private string? _error, _message;
+    private NotifyState? _notify;
+
+    private sealed record NotifyState(bool Desktop, bool Attention, bool Results, bool Replies, bool Supported, bool Secure, string Permission);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _notify = await JS.InvokeAsync<NotifyState>("fuseraftNotify.state");
+        StateHasChanged();
+    }
+
+    private async Task EnableDesktopAsync() =>
+        _notify = await JS.InvokeAsync<NotifyState>("fuseraftNotify.enableDesktop");
+
+    private async Task SetAsync(string name, object? value) =>
+        _notify = await JS.InvokeAsync<NotifyState>("fuseraftNotify.set", char.ToLowerInvariant(name[0]) + name[1..], value is true);
 
     private void ChangePassword()
     {

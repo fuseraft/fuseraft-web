@@ -58,6 +58,8 @@ public sealed class DaemonConnection(
         [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)];
 
     public event Action? Changed;
+    /// <summary>Fired when a task's result arrives.</summary>
+    public event Action<DaemonTask>? TaskFinished;
 
     public bool CanDispatch
     {
@@ -382,9 +384,10 @@ public sealed class DaemonConnection(
     {
         var sessionId = Str(e, "sessionId") ?? "?";
         var succeeded = e.TryGetProperty("succeeded", out var s) && s.ValueKind == JsonValueKind.True;
+        DaemonTask? task;
         lock (_lock)
         {
-            var task = _tasks.FirstOrDefault(t => t.SessionId == sessionId);
+            task = _tasks.FirstOrDefault(t => t.SessionId == sessionId);
             if (task is null)
             {
                 // Dispatched before this server restarted; the daemon kept the result for it.
@@ -399,6 +402,7 @@ public sealed class DaemonConnection(
         }
         store?.SetTaskOwner(endpoint.Name, sessionId, null);
         AddActivity(succeeded ? $"✓ Session {sessionId} finished" : $"✗ Session {sessionId} failed: {Str(e, "errorMessage")}");
+        TaskFinished?.Invoke(task);
     }
 
     private void SetDisconnected(string? error, bool reconnecting)

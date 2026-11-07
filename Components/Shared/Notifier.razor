@@ -1,0 +1,47 @@
+@implements IDisposable
+@inject NotificationService Notifications
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@code {
+    private bool _listening;
+
+    // Not before the first render: a prerendered component has no browser to call.
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender) return;
+        Notifications.Published += OnPublished;
+        _listening = true;
+    }
+
+    private void OnPublished(AppNotification n)
+    {
+        if (!n.IsFor(Current.User)) return;
+        _ = InvokeAsync(() => ShowAsync(n));
+    }
+
+    private async Task ShowAsync(AppNotification n)
+    {
+        var here = "/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0];
+        try
+        {
+            await JS.InvokeVoidAsync("fuseraftNotify.show", new
+            {
+                id       = n.Id,
+                title    = n.Title,
+                body     = n.Body,
+                link     = n.Link,
+                category = n.Category,
+                level    = n.Level,
+                onPage   = string.Equals(here, n.Link, StringComparison.OrdinalIgnoreCase),
+            });
+        }
+        catch (JSDisconnectedException) { /* the tab closed */ }
+        catch (TaskCanceledException) { }
+    }
+
+    public void Dispose()
+    {
+        if (_listening) Notifications.Published -= OnPublished;
+    }
+}

@@ -32,6 +32,22 @@ public sealed class PendingApproval
 
     public TaskCompletionSource<bool> Tcs { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    /// <summary>What it asks to do, in one line of Markdown.</summary>
+    public string Summary => Kind switch
+    {
+        "shell_command"  => $"`{OneLine(Command)}`",
+        "file_write"     => $"{Action ?? "write_file"} `{Path}`",
+        "tool_action"    => $"`{Plugin}.{Action}`",
+        "route_approval" => $"the handoff from {SourceAgent} to {TargetAgent}",
+        _                => Kind,
+    };
+
+    private static string OneLine(string? s)
+    {
+        var flat = (s ?? "").ReplaceLineEndings(" ").Replace('`', '\'').Trim();
+        return flat.Length <= 120 ? flat : flat[..120] + "…";
+    }
+
     public static PendingApproval FromEvent(string sessionId, ApprovalSource source, JsonElement e,
         string? origin = null, string? ownerId = null) => new()
     {

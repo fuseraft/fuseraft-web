@@ -94,6 +94,7 @@ builder.Services.AddSingleton<SessionHostService>();
 builder.Services.AddSingleton<PluginCatalogService>();
 builder.Services.AddSingleton<ModelProfileRegistry>();
 builder.Services.AddSingleton<ReplService>();
+builder.Services.AddSingleton<NotificationService>();
 builder.Services.AddSingleton(sp => new DaemonStore(Path.Combine(web.ResolvedDataDirectory, "daemons.json"),
     sp.GetRequiredService<IDataProtectionProvider>(), sp.GetRequiredService<ILogger<DaemonStore>>()));
 builder.Services.AddSingleton<DaemonService>();
