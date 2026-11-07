@@ -50,8 +50,7 @@
             <div class="form-group">
                 <label class="form-label">System Prompt <span class="muted small">(optional)</span></label>
                 <textarea class="input repl-sysprompt"
-                          value="@_systemPrompt"
-                          @oninput="@(e => _systemPrompt = e.Value?.ToString() ?? "")"
+                          @bind="_systemPrompt" @bind:event="oninput"
                           placeholder="You are a helpful assistant."
                           rows="3"></textarea>
             </div>
@@ -204,9 +203,10 @@ else
 
             <div class="repl-dock">
                 <div class="repl-input-area">
+                    @* @bind, not value= with @oninput: only @bind stops each re-render from writing the
+                       server's older copy over what's still being typed. *@
                     <textarea class="repl-textarea"
-                              value="@_input"
-                              @oninput="@(e => _input = e.Value?.ToString() ?? "")"
+                              @bind="_input" @bind:event="oninput"
                               @onkeydown="OnKeyDown"
                               placeholder="@(session.Status == ReplStatus.Thinking && session.InputWhileBusy
                                              ? "Add to the reply in progress…"
