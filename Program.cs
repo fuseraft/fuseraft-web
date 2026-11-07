@@ -18,6 +18,9 @@ if (args is ["users", .. var userArgs])
     return UsersCommand.Run(userArgs);
 if (args is ["relay", .. var relayArgs])
     return await RelayHost.RunAsync(relayArgs);
+// Without this, ASP.NET would take --version as a setting and start the server.
+if (InfoCommand.TryRun(args, Console.Out) is { } infoExit)
+    return infoExit;
 
 var builder = WebApplication.CreateBuilder(args);
 
