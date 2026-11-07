@@ -30,9 +30,13 @@ public sealed class NotificationService : IDisposable
         _daemons.TaskFinished += OnTaskFinished;
     }
 
-    private void OnApproval(PendingApproval r)       => Publish(For(r));
-    private void OnSessionEnded(ManagedSession s)    => Publish(For(s));
-    private void OnReplAlert(ActiveReplSession s, ReplAlert a) => Publish(For(s, a));
+    private void OnApproval(PendingApproval r) => Publish(For(r) with { StillWaiting = () => _hitl.IsPending(r.Id) });
+    private void OnSessionEnded(ManagedSession s) => Publish(For(s));
+    private void OnReplAlert(ActiveReplSession s, ReplAlert a)
+    {
+        var question = s.Question;
+        Publish(a == ReplAlert.Question ? For(s, a) with { StillWaiting = () => ReferenceEquals(s.Question, question) } : For(s, a));
+    }
     private void OnTaskFinished(DaemonConnection c, DaemonTask t) => Publish(For(c.Endpoint.Name, t));
 
     private void Publish(AppNotification? n)

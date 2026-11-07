@@ -4,7 +4,13 @@
 @inject IOptions<AuthOptions> Auth
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject IOptions<EmailOptions> Email
+@inject IOptions<WebOptions> Web
+@inject EmailConfirmation Confirmation
+@inject IEmailSender Sender
+@inject ILogger<Account> Logger
 @using Microsoft.Extensions.Options
+@using fuseraft.Web.Services.Email
 
 <PageTitle>Account — Fuseraft</PageTitle>
 
@@ -83,6 +89,61 @@
     </div>
 </div>
 
+<h2 class="section-title">Email</h2>
+<div class="card" style="max-width:560px">
+    <div class="card-body">
+        @if (!Email.Value.Enabled)
+        {
+            <span class="muted">Email isn't set up on this server.</span>
+            @if (Current.User.IsAdmin)
+            {
+                <div class="form-hint">Set <code>Fuseraft:Email</code> to an SMTP server to send notification emails. See the Notifications guide.</div>
+            }
+        }
+        else
+        {
+            @if (_emailMessage is not null) { <div class="form-hint">@_emailMessage</div> }
+            @if (_emailError is not null) { <div class="error-banner">@_emailError</div> }
+            <div class="form-group">
+                <div class="form-label">Address</div>
+                @if (Me.Email is { } address)
+                {
+                    <div>Notifications go to <strong>@address</strong>.</div>
+                    <div class="email-actions">
+                        <button class="btn btn-sm" @onclick="SendTestAsync" disabled="@_sending">Send a test email</button>
+                        <button class="btn btn-sm" @onclick="() => SetAddress(null)">Stop emailing me</button>
+                    </div>
+                }
+                else
+                {
+                    <span class="muted">No address yet.</span>
+                }
+                @foreach (var sso in SignOnEmails)
+                {
+                    <div class="email-actions">
+                        <button class="btn btn-sm" @onclick="() => SetAddress(sso)">Use @sso</button>
+                        <span class="form-hint">from your sign-on</span>
+                    </div>
+                }
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="new-email">@(Me.Email is null ? "Add an address" : "Change it")</label>
+                <input class="input" id="new-email" type="email" autocomplete="email" @bind="_newEmail" />
+                <div class="form-hint">We'll email a link to confirm it's yours. It works for 24 hours.</div>
+                <button class="btn btn-sm btn-primary" style="margin-top:8px" @onclick="SendConfirmationAsync" disabled="@_sending">Send link</button>
+            </div>
+            <div class="form-group">
+                <div class="form-label">Email me when</div>
+                <div class="notify-options">
+                    <label><input type="checkbox" checked="@Me.EmailChoices.Attention" @onchange="e => SetChoice(c => c.Attention = e.Value is true)" /> something has waited @WaitLabel for my approval or answer</label>
+                    <label><input type="checkbox" checked="@Me.EmailChoices.Results" @onchange="e => SetChoice(c => c.Results = e.Value is true)" /> a session or daemon task finishes or fails</label>
+                </div>
+                <div class="form-hint">Chat replies are never emailed. What happens close together arrives as one email.</div>
+            </div>
+        }
+    </div>
+</div>
+
 @if (Auth.Value.LocalAccounts)
 {
     <h2 class="section-title">Change password</h2>
@@ -135,6 +196,77 @@
     private string _current = "", _new = "", _confirm = "";
     private string? _error, _message;
     private NotifyState? _notify;
+    private string _newEmail = "";
+    private string? _emailMessage, _emailError;
+    private bool _sending;
+
+    [SupplyParameterFromQuery(Name = "email")] private string? EmailResult { get; set; }
+
+    // The circuit's copy of the account doesn't see changes saved since sign-in.
+    private WebUser Me => Users.Find(Current.User.Id) ?? Current.User;
+
+    private IEnumerable<string> SignOnEmails => Me.Logins
+        .Select(l => EmailConfirmation.Normalize(l.Email)).OfType<string>()
+        .Where(e => !string.Equals(e, Me.Email, StringComparison.OrdinalIgnoreCase))
+        .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private string WaitLabel => Email.Value.WaitMinutes switch
+    {
+        <= 0 => "at all",
+        1    => "a minute",
+        var m => $"{m} minutes",
+    };
+
+    protected override void OnInitialized()
+    {
+        _emailMessage = EmailResult == "confirmed" ? "Your address is confirmed." : null;
+        _emailError   = EmailResult == "invalid" ? "That link is used, expired or for another account. Send yourself a new one." : null;
+    }
+
+    private void SetAddress(string? address)
+    {
+        _emailError = null;
+        Users.Update(Me.Id, u => u.Email = address);
+        _emailMessage = address is null ? "You won't get notification emails." : $"Notifications now go to {address}.";
+    }
+
+    private void SetChoice(Action<EmailChoices> change) => Users.Update(Me.Id, u => change(u.EmailChoices));
+
+    private async Task SendConfirmationAsync()
+    {
+        _emailMessage = _emailError = null;
+        if (EmailConfirmation.Normalize(_newEmail) is not { } address) { _emailError = "That isn't an email address."; return; }
+        if (!Confirmation.TryReserve(Me)) { _emailError = "A link was just sent. Wait a minute before asking for another."; return; }
+
+        var link = $"{(Web.Value.PublicUrl?.TrimEnd('/') ?? Nav.BaseUri.TrimEnd('/'))}/account/email/confirm?token={Uri.EscapeDataString(Confirmation.Token(Me, address))}";
+        await SendAsync(address, "Confirm your email for fuseraft",
+            $"Someone signed in as {Me.UserName} asked to get fuseraft notifications at this address.\n\n" +
+            $"To confirm, open this link while signed in:\n{link}\n\nIt works for 24 hours. If this wasn't you, ignore this email.\n",
+            $"Sent a link to {address}. Open it while signed in here.");
+        if (_emailError is null) _newEmail = "";
+    }
+
+    private Task SendTestAsync() => Me.Email is { } to
+        ? SendAsync(to, "Test email from fuseraft", "Notification emails from fuseraft will look like this.\n", $"Sent a test email to {to}.")
+        : Task.CompletedTask;
+
+    private async Task SendAsync(string to, string subject, string body, string sent)
+    {
+        _sending = true;
+        try
+        {
+            await Sender.SendAsync(to, subject, body);
+            _emailMessage = sent;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Couldn't email {User}", Me.UserName);
+            _emailError = Me.IsAdmin
+                ? $"Couldn't send it: {ex.Message}"
+                : "Couldn't send it. Ask an admin to check the server's email settings.";
+        }
+        finally { _sending = false; }
+    }
 
     private sealed record NotifyState(bool Desktop, bool Attention, bool Results, bool Replies, bool Supported, bool Secure, string Permission);
 

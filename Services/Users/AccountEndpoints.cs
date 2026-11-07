@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using fuseraft.Web.Services.Email;
 
 namespace fuseraft.Web.Services.Users;
 
@@ -49,6 +50,16 @@ public static class AccountEndpoints
                 properties.Items[OidcSignIn.LinkItem] = id;
             return Results.Challenge(properties, [OpenIdConnectDefaults.AuthenticationScheme]);
         }).AllowAnonymous();
+
+        // Signed in, so a link only ever confirms an address for the account it was sent from.
+        account.MapGet("/email/confirm", (HttpContext http, UserStore users, EmailConfirmation confirmation, string? token) =>
+        {
+            if (users.Find(http.User.FindFirstValue(ClaimTypes.NameIdentifier)) is not { } user ||
+                confirmation.Check(user, token) is not { } address)
+                return Results.LocalRedirect("/account?email=invalid");
+            users.Update(user.Id, u => u.Email = address);
+            return Results.LocalRedirect("/account?email=confirmed");
+        });
 
         account.MapPost("/logout", async (HttpContext http) =>
         {

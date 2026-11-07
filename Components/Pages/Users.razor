@@ -28,6 +28,20 @@
                         <strong>@u.UserName</strong>
                         @if (u.Disabled) { <span class="owner-pill">disabled</span> }
                         <div class="muted mono" title="fuseraft home">@u.Home</div>
+                        @if (_editEmailId == u.Id)
+                        {
+                            <input class="input" type="email" placeholder="name@example.com" @bind="_emailText" />
+                            <div class="form-hint">Where their notification emails go. Leave it empty for none.</div>
+                            <button class="btn btn-sm btn-primary" @onclick="() => SaveEmail(u)">Save</button>
+                            <button class="btn btn-sm" @onclick="() => _editEmailId = null">Cancel</button>
+                        }
+                        else
+                        {
+                            <div class="muted">
+                                @(u.Email ?? "no email")
+                                <button class="btn btn-sm" @onclick="() => { _editEmailId = u.Id; _emailText = u.Email ?? string.Empty; }">Edit</button>
+                            </div>
+                        }
                     </td>
                     <td>@(u.IsAdmin ? "admin" : "user")</td>
                     <td class="muted">
@@ -104,8 +118,8 @@
 
 @code {
     private IReadOnlyList<WebUser> _users = [];
-    private string? _error, _editRootsId, _resetId, _deleteId;
-    private string _rootsText = "", _resetPassword = "", _newName = "", _newPassword = "";
+    private string? _error, _editRootsId, _editEmailId, _resetId, _deleteId;
+    private string _rootsText = "", _emailText = "", _resetPassword = "", _newName = "", _newPassword = "";
     private bool _newAdmin;
 
     protected override void OnInitialized()
@@ -138,6 +152,13 @@
             .Select(r => Path.GetFullPath(r)).Distinct().ToList();
         if (roots.Count == 0) { _error = "A user needs at least one workspace root."; return; }
         Run(() => Store.Update(u.Id, x => x.WorkspaceRoots = roots), done: () => _editRootsId = null);
+    }
+
+    private void SaveEmail(WebUser u)
+    {
+        var address = string.IsNullOrWhiteSpace(_emailText) ? null : fuseraft.Web.Services.Email.EmailConfirmation.Normalize(_emailText);
+        if (address is null && !string.IsNullOrWhiteSpace(_emailText)) { _error = "That isn't an email address."; return; }
+        Run(() => Store.Update(u.Id, x => x.Email = address), done: () => _editEmailId = null);
     }
 
     private void Add() => Run(
