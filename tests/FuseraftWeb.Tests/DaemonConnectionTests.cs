@@ -338,7 +338,8 @@ public sealed class DaemonConnectionTests
             Assert.Equal("alice", (await Eventually(() => _broker.GetPending().SingleOrDefault())).OwnerId);
             transport.Push("""{"type":"result","sessionId":"s1","succeeded":true}""");
             await Eventually(() => second.Tasks.Single().Status == DaemonTaskStatus.Succeeded ? second : null);
-            Assert.Null(store.TaskOwner("box", "s1"));
+            // The task is marked done just before its owner is forgotten, so wait for that too.
+            await Eventually(() => store.TaskOwner("box", "s1") is null ? second : null);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
