@@ -2055,3 +2055,10 @@ code, pre, .mono { font-family: var(--mono); }
   .repl-dock { padding-bottom: 12px; }
   .repl-send-hint { display: none; }
 }
+
+/* ===== Webhooks ===== */
+.webhook-card { max-width: 760px; margin-bottom: 16px; }
+.webhook-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+.webhook-url { overflow-wrap: anywhere; margin-top: 4px; }
+.webhook-secret { overflow-wrap: anywhere; user-select: all; }
+.webhook-log { margin-top: 12px; }

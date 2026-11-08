@@ -14,6 +14,7 @@ using fuseraft.Web.Services.Daemons;
 using fuseraft.Web.Services.Email;
 using fuseraft.Web.Services.Relay;
 using fuseraft.Web.Services.Users;
+using fuseraft.Web.Services.Webhooks;
 
 if (args is ["users", .. var userArgs])
     return UsersCommand.Run(userArgs);
@@ -32,6 +33,7 @@ builder.Services.Configure<FuseraftCliOptions>(builder.Configuration.GetSection(
 builder.Services.Configure<WebOptions>(builder.Configuration.GetSection("Fuseraft"));
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Fuseraft:Email"));
+builder.Services.Configure<WebhookOptions>(builder.Configuration.GetSection("Fuseraft:Webhooks"));
 
 var web  = builder.Configuration.GetSection("Fuseraft").Get<WebOptions>() ?? new WebOptions();
 var auth = builder.Configuration.GetSection("Auth").Get<AuthOptions>() ?? new AuthOptions();
@@ -100,6 +102,11 @@ builder.Services.AddSingleton<NotificationService>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddSingleton<EmailConfirmation>();
 builder.Services.AddHostedService<EmailNotifier>();
+builder.Services.AddSingleton(sp => new WebhookStore(Path.Combine(web.ResolvedDataDirectory, "webhooks.json"),
+    sp.GetRequiredService<IDataProtectionProvider>(), sp.GetRequiredService<ILogger<WebhookStore>>()));
+builder.Services.AddSingleton<WebhookClient>();
+builder.Services.AddSingleton<WebhookNotifier>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookNotifier>());
 builder.Services.AddSingleton(sp => new DaemonStore(Path.Combine(web.ResolvedDataDirectory, "daemons.json"),
     sp.GetRequiredService<IDataProtectionProvider>(), sp.GetRequiredService<ILogger<DaemonStore>>()));
 builder.Services.AddSingleton<DaemonService>();

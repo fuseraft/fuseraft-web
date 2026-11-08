@@ -37,7 +37,7 @@ It listens on `http://localhost:5000`, so only this machine can reach it until y
 - **[Sessions](https://fuseraft.ai/fuseraft-web/guides/sessions/).** Start multi-agent orchestration sessions, or generate one with the Orchestration Builder, and watch every turn and tool call stream in. Cancel and resume them.
 - **[Chat](https://fuseraft.ai/fuseraft-web/guides/chat/).** Chat with the same engine as `fuseraft repl`, confined to a workspace, with saved chats.
 - **[Approvals](https://fuseraft.ai/fuseraft-web/guides/approvals/).** Every command, file write and handoff your sessions, chats and daemon tasks wait on, in one place.
-- **[Notifications](https://fuseraft.ai/fuseraft-web/guides/notifications/).** A note in the corner, a desktop notification or an email when an approval waits, work finishes or a chat replies.
+- **[Notifications](https://fuseraft.ai/fuseraft-web/guides/notifications/).** A note in the corner, a desktop notification, an email or a webhook (Slack or signed JSON) when an approval waits, work finishes or a chat replies.
 - **[Daemons](https://fuseraft.ai/fuseraft-web/guides/daemons/).** Attach to `fuseraft serve` on other machines over TLS, send it tasks and answer their approvals. Admins choose who may use each daemon.
 - **[Restarts don't end work](https://fuseraft.ai/fuseraft-web/deploy/restarts/).** Sessions and chats run in relay processes that outlive the server.
 - **[Model profiles, schedule, plugins, context, configs and memory](https://fuseraft.ai/fuseraft-web/guides/more/).**
