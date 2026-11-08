@@ -256,8 +256,11 @@ else
         // Re-attach to any session left open from a previous page visit.
         _activeSessionId = ReplService.GetSessions(Current.User).FirstOrDefault()?.Key;
 
-        ReplService.SessionChanged += OnSessionChanged;
-        Broker.PendingChanged      += OnPendingChanged;
+        if (RendererInfo.IsInteractive)
+        {
+            ReplService.SessionChanged += OnSessionChanged;
+            Broker.PendingChanged      += OnPendingChanged;
+        }
     }
 
     private async Task RefreshSnapshotsAsync()

@@ -35,7 +35,7 @@ else
     protected override void OnInitialized()
     {
         _pending = [..Broker.GetPending(Current.User)];
-        Broker.PendingChanged += OnPendingChanged;
+        if (RendererInfo.IsInteractive) Broker.PendingChanged += OnPendingChanged;
     }
 
     private void OnPendingChanged() =>

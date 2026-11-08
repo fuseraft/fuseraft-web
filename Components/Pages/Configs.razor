@@ -142,7 +142,7 @@ else if (_validation is not null)
     protected override void OnInitialized()
     {
         _path = PreferFuseraftConfigDir(WorkspaceService.Current);
-        WorkspaceService.Changed += OnWorkspaceChanged;
+        if (RendererInfo.IsInteractive) WorkspaceService.Changed += OnWorkspaceChanged;
     }
 
     private void OnWorkspaceChanged() =>
