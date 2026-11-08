@@ -125,7 +125,7 @@
     protected override void OnInitialized()
     {
         _users = Store.All;
-        Store.Changed += OnChanged;
+        if (RendererInfo.IsInteractive) Store.Changed += OnChanged;
     }
 
     private void OnChanged() => InvokeAsync(() => { _users = Store.All; StateHasChanged(); });

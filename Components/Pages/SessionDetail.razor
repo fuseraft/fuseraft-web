@@ -103,8 +103,11 @@
         {
             _events    = _session.SnapshotEvents();
             _approvals = [.. Broker.GetPending(Current.User, SessionId)];
-            SessionService.EventFired += OnEvent;
-            Broker.PendingChanged     += OnPendingChanged;
+            if (RendererInfo.IsInteractive)
+            {
+                SessionService.EventFired += OnEvent;
+                Broker.PendingChanged     += OnPendingChanged;
+            }
         }
         _loading = false;
     }

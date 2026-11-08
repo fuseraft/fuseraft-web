@@ -101,6 +101,7 @@
     protected override void OnInitialized()
     {
         _pendingCount = Broker.GetPending(Current.User).Count;
+        if (!RendererInfo.IsInteractive) return;
         Broker.PendingChanged += OnPendingChanged;
         Nav.LocationChanged   += OnLocationChanged;
     }
