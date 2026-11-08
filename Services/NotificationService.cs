@@ -1,10 +1,11 @@
 using fuseraft.Web.Models;
 using fuseraft.Web.Services.Daemons;
+using fuseraft.Web.Services.Users;
 
 namespace fuseraft.Web.Services;
 
 /// <summary>
-/// Turns what happens in sessions, chats and daemon tasks into <see cref="AppNotification"/>s. Every signed-in
+/// Turns what happens in sessions, chats, daemon tasks and scheduled jobs into <see cref="AppNotification"/>s. Every signed-in
 /// browser tab listens, and shows those meant for its user (<see cref="AppNotification.IsFor"/>).
 /// </summary>
 public sealed class NotificationService : IDisposable
@@ -15,19 +16,23 @@ public sealed class NotificationService : IDisposable
     private readonly SessionHostService _sessions;
     private readonly ReplService        _repl;
     private readonly DaemonService      _daemons;
+    private readonly ScheduleTicker     _schedules;
 
     public event Action<AppNotification>? Published;
 
-    public NotificationService(HitlBroker hitl, SessionHostService sessions, ReplService repl, DaemonService daemons)
+    public NotificationService(HitlBroker hitl, SessionHostService sessions, ReplService repl, DaemonService daemons,
+        ScheduleTicker schedules)
     {
         _hitl     = hitl;
         _sessions = sessions;
         _repl     = repl;
         _daemons  = daemons;
+        _schedules = schedules;
         _hitl.Added           += OnApproval;
         _sessions.SessionEnded += OnSessionEnded;
         _repl.Alert           += OnReplAlert;
         _daemons.TaskFinished += OnTaskFinished;
+        _schedules.JobFinished += OnJobFinished;
     }
 
     private void OnApproval(PendingApproval r) => Publish(For(r) with { StillWaiting = () => _hitl.IsPending(r.Id) });
@@ -38,6 +43,7 @@ public sealed class NotificationService : IDisposable
         Publish(a == ReplAlert.Question ? For(s, a) with { StillWaiting = () => ReferenceEquals(s.Question, question) } : For(s, a));
     }
     private void OnTaskFinished(DaemonConnection c, DaemonTask t) => Publish(For(c.Endpoint.Name, t));
+    private void OnJobFinished(WebUser u, WireScheduledJob j) => Publish(For(u, j));
 
     private void Publish(AppNotification? n)
     {
@@ -82,6 +88,15 @@ public sealed class NotificationService : IDisposable
         ? new(NotificationKind.TaskFinished, t.OwnerId, $"Task on {daemon} finished", Trim(t.Task), "/daemons")
         : new(NotificationKind.TaskFailed, t.OwnerId, $"Task on {daemon} failed", Trim(t.ErrorMessage ?? t.Task), "/daemons");
 
+    /// <summary>Null when the job's owner turned off news of this outcome, or the CLI didn't say how it went.</summary>
+    internal static AppNotification? For(WebUser owner, WireScheduledJob j) => j.LastExitCode switch
+    {
+        null => null,
+        var code when !owner.AlertFor(j.Name).Wants(code == 0) => null,
+        0    => new(NotificationKind.JobFinished, owner.Id, $"Scheduled job {j.Name} finished", Trim(j.Task), "/schedule"),
+        var code => new(NotificationKind.JobFailed, owner.Id, $"Scheduled job {j.Name} failed (exit {code})", Trim(j.Task), "/schedule"),
+    };
+
     /// <summary>Drops the Markdown that would show up as stray characters in a plain-text notification.</summary>
     private static string Plain(string? markdown) =>
         (markdown ?? "").Replace("`", "").Replace("**", "").Replace("__", "");
@@ -98,5 +113,6 @@ public sealed class NotificationService : IDisposable
         _sessions.SessionEnded -= OnSessionEnded;
         _repl.Alert            -= OnReplAlert;
         _daemons.TaskFinished  -= OnTaskFinished;
+        _schedules.JobFinished -= OnJobFinished;
     }
 }

@@ -80,7 +80,7 @@
                 <div class="form-label">Tell me when</div>
                 <div class="notify-options">
                     <label><input type="checkbox" checked="@_notify.Attention" @onchange="e => SetAsync(nameof(NotifyState.Attention), e.Value)" /> something needs my approval or answer</label>
-                    <label><input type="checkbox" checked="@_notify.Results" @onchange="e => SetAsync(nameof(NotifyState.Results), e.Value)" /> a session or daemon task finishes or fails</label>
+                    <label><input type="checkbox" checked="@_notify.Results" @onchange="e => SetAsync(nameof(NotifyState.Results), e.Value)" /> a session, daemon task or scheduled job finishes or fails</label>
                     <label><input type="checkbox" checked="@_notify.Replies" @onchange="e => SetAsync(nameof(NotifyState.Replies), e.Value)" /> a chat replies</label>
                 </div>
                 <div class="form-hint">These settings are kept in this browser.</div>
@@ -136,7 +136,7 @@
                 <div class="form-label">Email me when</div>
                 <div class="notify-options">
                     <label><input type="checkbox" checked="@Me.EmailChoices.Attention" @onchange="e => SetChoice(c => c.Attention = e.Value is true)" /> something has waited @WaitLabel for my approval or answer</label>
-                    <label><input type="checkbox" checked="@Me.EmailChoices.Results" @onchange="e => SetChoice(c => c.Results = e.Value is true)" /> a session or daemon task finishes or fails</label>
+                    <label><input type="checkbox" checked="@Me.EmailChoices.Results" @onchange="e => SetChoice(c => c.Results = e.Value is true)" /> a session, daemon task or scheduled job finishes or fails</label>
                 </div>
                 <div class="form-hint">Chat replies are never emailed. What happens close together arrives as one email.</div>
             </div>

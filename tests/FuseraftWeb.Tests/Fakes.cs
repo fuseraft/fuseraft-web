@@ -11,6 +11,8 @@ internal sealed class FakeCli() : FuseraftCli(Options.Create(new FuseraftCliOpti
 {
     public Dictionary<string, string> Responses { get; } = [];
     public List<string[]> Runs { get; } = [];
+    /// <summary>Called with each command's arguments as it "runs".</summary>
+    public Action<string[]>? OnRun { get; set; }
     public Queue<FakeBridge> Bridges { get; } = new();
     public List<(string[] Args, string? Cwd)> Started { get; } = [];
 
@@ -43,6 +45,7 @@ internal sealed class FakeCli() : FuseraftCli(Options.Create(new FuseraftCliOpti
     public override Task RunAsync(IReadOnlyDictionary<string, string>? environment, params string[] args)
     {
         Runs.Add(args);
+        OnRun?.Invoke(args);
         return Task.CompletedTask;
     }
 

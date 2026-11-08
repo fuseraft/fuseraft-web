@@ -7,6 +7,7 @@
                 <th>Next Run (UTC)</th>
                 <th>Last Run</th>
                 <th>Enabled</th>
+                @if (AlertFor is not null) { <th>Notify me of</th> }
                 <th></th>
                 @if (OnRun is not null) { <th></th> }
             </tr>
@@ -35,6 +36,18 @@
                             @(job.Enabled ? "On" : "Off")
                         </button>
                     </td>
+                    @if (AlertFor is not null)
+                    {
+                        <td>
+                            <select class="input alert-select" aria-label="Notify me of @job.Name's runs"
+                                    @onchange="e => OnAlert?.Invoke((job.Name, Enum.Parse<ScheduleAlert>((string)e.Value!)))">
+                                @foreach (var (alert, label) in AlertLabels)
+                                {
+                                    <option value="@alert" selected="@(AlertFor(job.Name) == alert)">@label</option>
+                                }
+                            </select>
+                        </td>
+                    }
                     <td>
                         <button class="btn btn-sm btn-danger"
                                 @onclick="() => OnRemove?.Invoke(job.Name)">
@@ -55,7 +68,7 @@
             @if (!Jobs.Any())
             {
                 <tr>
-                    <td colspan="@(OnRun is not null ? 7 : 6)" class="empty-row">
+                    <td colspan="@(6 + (OnRun is not null ? 1 : 0) + (AlertFor is not null ? 1 : 0))" class="empty-row">
                         No scheduled jobs. Click "+ Add Job" or use <code>fuseraft schedule add</code>.
                     </td>
                 </tr>
@@ -69,4 +82,12 @@
     [Parameter] public Action<string>?            OnRemove { get; set; }
     [Parameter] public Action<(string Name, bool Enabled)>? OnToggle { get; set; }
     [Parameter] public Action<string>?            OnRun  { get; set; }
+    [Parameter] public Func<string, ScheduleAlert>? AlertFor { get; set; }
+    [Parameter] public Action<(string Name, ScheduleAlert Alert)>? OnAlert { get; set; }
+
+    public static readonly (ScheduleAlert Alert, string Label)[] AlertLabels =
+    [
+        (ScheduleAlert.Failures, "Failures"), (ScheduleAlert.Successes, "Successes"),
+        (ScheduleAlert.Both, "Both"), (ScheduleAlert.Off, "Nothing"),
+    ];
 }

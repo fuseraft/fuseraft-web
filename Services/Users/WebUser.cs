@@ -29,6 +29,11 @@ public sealed class WebUser
     public string? Email { get; set; }
     public EmailChoices EmailChoices { get; set; } = new();
 
+    /// <summary>Which runs of each scheduled job, by name, to notify about; a job not listed notifies of failures.</summary>
+    public Dictionary<string, ScheduleAlert> ScheduleAlerts { get; set; } = [];
+
+    public ScheduleAlert AlertFor(string job) => ScheduleAlerts.GetValueOrDefault(job);
+
     public string Label => string.IsNullOrWhiteSpace(DisplayName) ? UserName : DisplayName;
 
     /// <summary>Whether this user may see and act on something <paramref name="ownerId"/> owns; null owners are admin-only.</summary>
@@ -40,8 +45,17 @@ public sealed class EmailChoices
 {
     /// <summary>An approval or question that has waited <c>Fuseraft:Email:WaitMinutes</c> unanswered.</summary>
     public bool Attention { get; set; } = true;
-    /// <summary>A session or daemon task that finished or failed.</summary>
+    /// <summary>A session, daemon task or scheduled job that finished or failed.</summary>
     public bool Results { get; set; } = true;
+}
+
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ScheduleAlert>))]
+public enum ScheduleAlert { Failures, Successes, Both, Off }
+
+public static class ScheduleAlertExtensions
+{
+    public static bool Wants(this ScheduleAlert alert, bool succeeded) =>
+        alert == ScheduleAlert.Both || alert == (succeeded ? ScheduleAlert.Successes : ScheduleAlert.Failures);
 }
 
 /// <summary>An OIDC identity linked to a <see cref="WebUser"/>, matched on issuer and subject.</summary>

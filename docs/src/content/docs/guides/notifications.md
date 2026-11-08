@@ -7,6 +7,7 @@ fuseraft-web tells you when:
 
 - an approval or a chat's question is waiting for you,
 - a session or a daemon task finishes or fails,
+- a [scheduled job](#scheduled-jobs) fails, or succeeds if you ask,
 - a chat replies.
 
 While you're on another page, a note appears in the corner. Click it to go to what it's about.
@@ -41,6 +42,7 @@ You're emailed when:
 - an approval or a chat's question has waited 5 minutes unanswered. If you answer it in time,
   there's no email.
 - a session or daemon task finishes or fails.
+- a [scheduled job](#scheduled-jobs) fails, or succeeds if you ask.
 
 Chat replies are never emailed. What happens within a minute arrives as one email. Each part can be
 turned off on the Account page, and **Send a test email** checks that mail gets through.
@@ -67,11 +69,21 @@ Point `Fuseraft:Email` at an SMTP server, and set `Fuseraft:PublicUrl` so emails
 The password goes in the `FUSERAFT_WEB_SMTP_PASSWORD` environment variable. Every setting is in
 [Configuration](/fuseraft-web/reference/config/#email).
 
+## Scheduled jobs
+
+Each job on the **Schedule** page has a **Notify me of** choice: **Failures**, **Successes**, **Both**
+or **Nothing**. It starts at Failures, also for jobs added with `fuseraft schedule add`.
+
+A job's run is reported when fuseraft-web ran it, which it does once a minute unless
+[`Fuseraft:RunSchedules`](/fuseraft-web/reference/config/) is off. Runs started by the host's own cron
+aren't reported, and neither are runs from fuseraft before 1.21, which doesn't record how a job went.
+**Run** on the Schedule page starts a live session, which notifies like any other.
+
 ## Who is told
 
 The same people, in the browser and by email:
 
-- You hear about your own sessions, chats and daemon tasks.
+- You hear about your own sessions, chats, daemon tasks and scheduled jobs.
 - Admins also hear about other people's session approvals, which they can answer, and about
   approvals and tasks on a daemon whose sender isn't known. They don't hear about other people's
   chats or results.

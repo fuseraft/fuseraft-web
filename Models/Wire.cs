@@ -94,6 +94,8 @@ public sealed record WireScheduledJob
     public DateTimeOffset  CreatedAt   { get; init; }
     public DateTimeOffset? LastRun     { get; init; }
     public DateTimeOffset? NextRun     { get; init; }
+    /// <summary>0 when the last run succeeded; null if it hasn't run, or ran under fuseraft before 1.21.</summary>
+    public int?            LastExitCode { get; init; }
 }
 
 public sealed record WireMemory

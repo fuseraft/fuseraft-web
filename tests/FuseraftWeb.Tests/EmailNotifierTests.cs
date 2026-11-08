@@ -24,7 +24,8 @@ public sealed class EmailNotifierTests : IAsyncDisposable
         _notifications = new NotificationService(_broker,
             new SessionHostService(cli, _broker, _accounts.Store, profiles, NullLogger<SessionHostService>.Instance),
             new ReplService(profiles, cli, _broker),
-            new DaemonService([], _broker, () => throw new InvalidOperationException("no transport in these tests")));
+            new DaemonService([], _broker, () => throw new InvalidOperationException("no transport in these tests")),
+            new ScheduleTicker(cli, _accounts.Store, profiles, Options.Create(new WebOptions()), NullLogger<ScheduleTicker>.Instance));
         _notifier = new EmailNotifier(_notifications, _accounts.Store, _sender,
             Options.Create(new EmailOptions { Host = "smtp.example.com", From = "fuseraft@example.com" }),
             Options.Create(new WebOptions { PublicUrl = "https://fuseraft.example.com/" }),
