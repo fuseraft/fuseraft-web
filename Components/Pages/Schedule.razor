@@ -2,6 +2,7 @@
 @inject ScheduleService ScheduleService
 @inject SessionHostService SessionService
 @inject NavigationManager Nav
+@inject UserStore Users
 
 <PageTitle>Schedule — Fuseraft</PageTitle>
 
@@ -44,6 +45,16 @@
                 <label class="form-label">Description <span class="form-optional">(optional)</span></label>
                 <input @bind="_addDesc" class="input" placeholder="Short description…" />
             </div>
+            <div class="form-group">
+                <label class="form-label">Notify me of</label>
+                <select @bind="_addAlert" class="input">
+                    @foreach (var (alert, label) in ScheduleTable.AlertLabels)
+                    {
+                        <option value="@alert">@label</option>
+                    }
+                </select>
+                <p class="form-hint">Runs that fail, succeed, or both: in your open tabs, and by email if you get it.</p>
+            </div>
             @if (_addError is not null)
             {
                 <div class="error-banner">@_addError</div>
@@ -66,7 +77,9 @@
 <ScheduleTable Jobs="@_jobs"
                OnRemove="@RemoveJob"
                OnToggle="@HandleToggle"
-               OnRun="@RunJob" />
+               OnRun="@RunJob"
+               AlertFor="@AlertFor"
+               OnAlert="@SetAlert" />
 
 @code {
     private List<WireScheduledJob> _jobs = [];
@@ -78,6 +91,7 @@
     private string _addConfig = string.Empty;
     private string _addDesc = string.Empty;
     private string _addWorkDir = string.Empty;
+    private ScheduleAlert _addAlert;
     private string? _addError;
     private string? _error;
 
@@ -108,15 +122,29 @@
         try
         {
             await ScheduleService.AddJobAsync(_addName, _addCron, _addTask, _addConfig, _addDesc, _addWorkDir);
+            SetAlert((_addName, _addAlert));
             _showAdd = false;
-            (_addName, _addCron, _addTask, _addConfig, _addDesc, _addWorkDir) = ("", "", "", "", "", "");
+            (_addName, _addCron, _addTask, _addConfig, _addDesc, _addWorkDir, _addAlert) = ("", "", "", "", "", "", default);
             await LoadJobsAsync();
         }
         catch (Exception ex) { _addError = ex.Message; }
         finally { _adding = false; }
     }
 
-    private void RemoveJob(string name) => _ = InvokeAsync(() => ChangeAsync(() => ScheduleService.RemoveJobAsync(name)));
+    private void RemoveJob(string name) => _ = InvokeAsync(() => ChangeAsync(async () =>
+    {
+        await ScheduleService.RemoveJobAsync(name);
+        Users.Update(Current.User.Id, u => u.ScheduleAlerts.Remove(name));
+    }));
+
+    private ScheduleAlert AlertFor(string name) => (Users.Find(Current.User.Id) ?? Current.User).AlertFor(name);
+
+    // Failures is what a job no one chose for gets, so it's left out of users.json.
+    private void SetAlert((string Name, ScheduleAlert Alert) args) => Users.Update(Current.User.Id, u =>
+    {
+        if (args.Alert == default) u.ScheduleAlerts.Remove(args.Name);
+        else u.ScheduleAlerts[args.Name] = args.Alert;
+    });
 
     private void HandleToggle((string Name, bool Enabled) args) =>
         _ = InvokeAsync(() => ChangeAsync(() => ScheduleService.SetEnabledAsync(args.Name, args.Enabled)));

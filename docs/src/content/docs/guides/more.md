@@ -24,6 +24,8 @@ fuseraft-web runs every account's due jobs once a minute, so no cron entry is ne
 with [`Fuseraft:RunSchedules`](/fuseraft-web/reference/config/). **Run** starts a job now as a live
 session, with approvals, and leaves its next scheduled run as it is.
 
+Each job's **Notify me of** choice says which of its runs you're [told about](/fuseraft-web/guides/notifications/#scheduled-jobs).
+
 ## Plugins
 
 Every plugin fuseraft's agents can use, with its functions.

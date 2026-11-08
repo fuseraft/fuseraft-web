@@ -1,8 +1,8 @@
 namespace fuseraft.Web.Models;
 
-public enum NotificationKind { Approval, Question, SessionFinished, SessionFailed, ChatReplied, ChatFailed, TaskFinished, TaskFailed }
+public enum NotificationKind { Approval, Question, SessionFinished, SessionFailed, ChatReplied, ChatFailed, TaskFinished, TaskFailed, JobFinished, JobFailed }
 
-/// <summary>Something that happened in a user's sessions, chats or daemon tasks, for the browser to tell them about.</summary>
+/// <summary>Something that happened in a user's sessions, chats, daemon tasks or scheduled jobs, for the browser to tell them about.</summary>
 /// <param name="OwnerId">The account it belongs to; null means only admins see it.</param>
 /// <param name="Link">The page that shows it.</param>
 public sealed record AppNotification(NotificationKind Kind, string? OwnerId, string Title, string Body, string Link)
@@ -28,8 +28,9 @@ public sealed record AppNotification(NotificationKind Kind, string? OwnerId, str
     public string Level => Kind switch
     {
         NotificationKind.Approval or NotificationKind.Question                                => "warn",
-        NotificationKind.SessionFailed or NotificationKind.ChatFailed or NotificationKind.TaskFailed => "err",
-        NotificationKind.SessionFinished or NotificationKind.TaskFinished                     => "ok",
+        NotificationKind.SessionFailed or NotificationKind.ChatFailed or NotificationKind.TaskFailed
+            or NotificationKind.JobFailed                                                     => "err",
+        NotificationKind.SessionFinished or NotificationKind.TaskFinished or NotificationKind.JobFinished => "ok",
         _                                                                                     => "info",
     };
 }

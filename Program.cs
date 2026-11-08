@@ -104,7 +104,8 @@ builder.Services.AddSingleton(sp => new DaemonStore(Path.Combine(web.ResolvedDat
     sp.GetRequiredService<IDataProtectionProvider>(), sp.GetRequiredService<ILogger<DaemonStore>>()));
 builder.Services.AddSingleton<DaemonService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DaemonService>());
-builder.Services.AddHostedService<ScheduleTicker>();
+builder.Services.AddSingleton<ScheduleTicker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ScheduleTicker>());
 builder.Services.AddHostedService<RelayAdopter>();
 
 // These act on one user's fuseraft home, so each circuit gets its own, bound to the signed-in account.
