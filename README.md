@@ -1,5 +1,9 @@
 # fuseraft-web
 
+[![CI](https://github.com/fuseraft/fuseraft-web/actions/workflows/ci.yml/badge.svg)](https://github.com/fuseraft/fuseraft-web/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/fuseraft/fuseraft-web)](https://github.com/fuseraft/fuseraft-web/releases)
+[![License: MIT](https://img.shields.io/github/license/fuseraft/fuseraft-web)](LICENSE)
+
 <img src="wwwroot/fuseraft-banner.png" alt="fuseraft — model-agnostic coding agent">
 
 A web UI for [fuseraft](https://github.com/fuseraft/fuseraft-cli). Run and watch agent orchestration sessions, chat with fuseraft, and approve what agents want to do, from a browser, with an account per person.
