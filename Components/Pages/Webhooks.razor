@@ -111,7 +111,7 @@ else
     protected override void OnInitialized()
     {
         Load();
-        Notifier.Delivered += OnDelivered;
+        if (RendererInfo.IsInteractive) Notifier.Delivered += OnDelivered;
     }
 
     private void Load() => _hooks = Store.For(Current.User.Id);
