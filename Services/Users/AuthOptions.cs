@@ -58,6 +58,9 @@ public sealed class WebOptions
 
     public const string KeyCertificatePasswordVariable = "FUSERAFT_WEB_KEY_CERT_PASSWORD";
 
+    /// <summary>The address people reach this server at, such as <c>https://fuseraft.example.com</c>, for links in emails.</summary>
+    public string? PublicUrl { get; set; }
+
     public string ResolvedDataDirectory => ExpandHome(DataDirectory);
 
     /// <summary>Loads <see cref="KeyCertificate"/>, or throws with a message that says what's wrong with it.</summary>

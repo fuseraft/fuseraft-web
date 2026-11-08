@@ -11,6 +11,8 @@ public sealed record AppNotification(NotificationKind Kind, string? OwnerId, str
     public DateTimeOffset At { get; init; } = DateTimeOffset.UtcNow;
     /// <summary>False for an approval admins may answer too; everything else tells only its owner.</summary>
     public bool OwnerOnly { get; init; } = true;
+    /// <summary>For an approval or question: whether it's still unanswered.</summary>
+    public Func<bool>? StillWaiting { get; init; }
 
     public bool IsFor(Services.Users.WebUser user) =>
         OwnerId is null ? user.IsAdmin : OwnerOnly ? OwnerId == user.Id : user.CanAccess(OwnerId);

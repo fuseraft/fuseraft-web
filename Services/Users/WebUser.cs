@@ -25,10 +25,23 @@ public sealed class WebUser
 
     public DateTimeOffset Created { get; init; } = DateTimeOffset.UtcNow;
 
+    /// <summary>Where notification emails go: confirmed by a link, taken from a sign-on provider, or set by an admin.</summary>
+    public string? Email { get; set; }
+    public EmailChoices EmailChoices { get; set; } = new();
+
     public string Label => string.IsNullOrWhiteSpace(DisplayName) ? UserName : DisplayName;
 
     /// <summary>Whether this user may see and act on something <paramref name="ownerId"/> owns; null owners are admin-only.</summary>
     public bool CanAccess(string? ownerId) => IsAdmin || (ownerId is not null && ownerId == Id);
+}
+
+/// <summary>Which notifications a user wants by email; chat replies never are.</summary>
+public sealed class EmailChoices
+{
+    /// <summary>An approval or question that has waited <c>Fuseraft:Email:WaitMinutes</c> unanswered.</summary>
+    public bool Attention { get; set; } = true;
+    /// <summary>A session or daemon task that finished or failed.</summary>
+    public bool Results { get; set; } = true;
 }
 
 /// <summary>An OIDC identity linked to a <see cref="WebUser"/>, matched on issuer and subject.</summary>

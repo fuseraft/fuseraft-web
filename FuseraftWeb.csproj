@@ -12,6 +12,7 @@
   <!-- The server reaches fuseraft only by running the CLI (see Services/Cli/FuseraftCli.cs), never
        by referencing its assemblies, so a fuseraft refactor can't break this build. -->
   <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.18.2" />
     <PackageReference Include="Markdig" Version="1.3.2" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.14" />
     <PackageReference Include="MinVer" Version="6.0.0">

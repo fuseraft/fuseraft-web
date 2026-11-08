@@ -1993,6 +1993,7 @@ code, pre, .mono { font-family: var(--mono); }
 }
 .toast-close:hover, .toast-open:hover strong { color: var(--text); }
 .notify-options { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.email-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 
 /* ===== Phones: the sidebar becomes a drawer ===== */
 .topbar, .nav-backdrop, .nav-close { display: none; }

@@ -23,6 +23,8 @@ public sealed class HitlBroker
     public IReadOnlyCollection<PendingApproval> GetPending(string sessionId) =>
         _pending.Values.Where(p => p.SessionId == sessionId).OrderBy(p => p.Created).ToList();
 
+    public bool IsPending(Guid id) => _pending.ContainsKey(id);
+
     public IReadOnlyCollection<PendingApproval> GetPending(WebUser user) =>
         _pending.Values.Where(p => user.CanAccess(p.OwnerId)).OrderBy(p => p.Created).ToList();
 

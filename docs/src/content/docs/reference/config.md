@@ -16,6 +16,7 @@ secrets in the environment rather than the file.
 | `Fuseraft:DataDirectory` | `~/.fuseraft-web` | Accounts, cookie-signing keys, saved daemons, and new accounts' homes and workspaces (mode 700) |
 | `Fuseraft:RunSchedules` | `true` | Run every account's due [scheduled jobs](/fuseraft-web/guides/more/#schedule) once a minute |
 | `Fuseraft:KeyCertificate` | | A `.pfx` with an RSA key that encrypts the data-protection keys. See [What to back up](/fuseraft-web/deploy/backups/) |
+| `Fuseraft:PublicUrl` | | The address people reach the server at, such as `https://fuseraft.example.com`, for links in emails |
 | `ASPNETCORE_URLS` | `http://localhost:5000` | Where to listen |
 | `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | `false` | Trust `X-Forwarded-*` from a [reverse proxy](/fuseraft-web/deploy/reverse-proxy/). Only set it behind one |
 
@@ -43,6 +44,20 @@ See [Single sign-on](/fuseraft-web/guides/single-sign-on/). It's on when `Author
 | `Auth:Oidc:AllowedEmailDomains` | | Domains (`example.com`) whose verified emails may get accounts |
 | `Auth:Oidc:AdminEmails` | | Verified emails that get admin accounts on first sign-in |
 
+## Email
+
+For [notification emails](/fuseraft-web/guides/notifications/#email). Without `Host` and `From`, there's no email.
+
+| Key | Default | |
+|---|---|---|
+| `Fuseraft:Email:Host` | | The SMTP server |
+| `Fuseraft:Email:Port` | `587` | |
+| `Fuseraft:Email:Security` | `StartTls` | `StartTls` (usually port 587), `Tls` (usually 465), or `None`. Use `None` only for a relay on the same machine |
+| `Fuseraft:Email:From` | | The sender, such as `fuseraft <fuseraft@example.com>` |
+| `Fuseraft:Email:UserName` | | Set it to sign in to the SMTP server; the password goes in `FUSERAFT_WEB_SMTP_PASSWORD` |
+| `Fuseraft:Email:WaitMinutes` | `5` | How long an approval or question waits unanswered before it's emailed |
+| `Fuseraft:Email:BatchSeconds` | `60` | How long to collect someone's notifications into one email |
+
 ## Daemons
 
 `Fuseraft:Daemons` is a list of [daemons](/fuseraft-web/guides/daemons/) to attach to. Each entry:
@@ -61,5 +76,6 @@ See [Single sign-on](/fuseraft-web/guides/single-sign-on/). It's on when `Author
 | Variable | |
 |---|---|
 | `FUSERAFT_WEB_KEY_CERT_PASSWORD` | The password for `Fuseraft:KeyCertificate` |
+| `FUSERAFT_WEB_SMTP_PASSWORD` | The password for `Fuseraft:Email:UserName` |
 | `FUSERAFT_WEB_PASSWORD` | The password for `fuseraft-web users add` and `passwd`, instead of a prompt |
 | `FUSERAFT_HOME` | The first account's fuseraft home, instead of `~/.fuseraft` |

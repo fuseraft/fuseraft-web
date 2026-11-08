@@ -11,6 +11,7 @@ using fuseraft.Web.Components;
 using fuseraft.Web.Services;
 using fuseraft.Web.Services.Cli;
 using fuseraft.Web.Services.Daemons;
+using fuseraft.Web.Services.Email;
 using fuseraft.Web.Services.Relay;
 using fuseraft.Web.Services.Users;
 
@@ -30,6 +31,7 @@ builder.Services.AddRazorComponents()
 builder.Services.Configure<FuseraftCliOptions>(builder.Configuration.GetSection("Fuseraft"));
 builder.Services.Configure<WebOptions>(builder.Configuration.GetSection("Fuseraft"));
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection("Fuseraft:Email"));
 
 var web  = builder.Configuration.GetSection("Fuseraft").Get<WebOptions>() ?? new WebOptions();
 var auth = builder.Configuration.GetSection("Auth").Get<AuthOptions>() ?? new AuthOptions();
@@ -95,6 +97,9 @@ builder.Services.AddSingleton<PluginCatalogService>();
 builder.Services.AddSingleton<ModelProfileRegistry>();
 builder.Services.AddSingleton<ReplService>();
 builder.Services.AddSingleton<NotificationService>();
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
+builder.Services.AddSingleton<EmailConfirmation>();
+builder.Services.AddHostedService<EmailNotifier>();
 builder.Services.AddSingleton(sp => new DaemonStore(Path.Combine(web.ResolvedDataDirectory, "daemons.json"),
     sp.GetRequiredService<IDataProtectionProvider>(), sp.GetRequiredService<ILogger<DaemonStore>>()));
 builder.Services.AddSingleton<DaemonService>();
