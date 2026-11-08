@@ -48,9 +48,14 @@
     protected override async Task OnInitializedAsync()
     {
         Refresh();
-        SessionService.SessionListChanged += OnListChanged;
+        // Not while prerendering: the history loaded below can change after the request's services are disposed
+        // but before this prerendered copy is, and re-rendering it then throws.
+        if (RendererInfo.IsInteractive)
+        {
+            SessionService.SessionListChanged += OnListChanged;
+            HitlBroker.PendingChanged         += OnPendingChanged;
+        }
         _ = SessionService.EnsureHistoryAsync(Current.User);
-        HitlBroker.PendingChanged         += OnPendingChanged;
         try
         {
             _scheduledJobs = (await Schedules.GetJobsAsync()).Count;

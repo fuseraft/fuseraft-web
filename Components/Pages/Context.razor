@@ -134,7 +134,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        WorkspaceService.Changed += OnWorkspaceChanged;
+        if (RendererInfo.IsInteractive) WorkspaceService.Changed += OnWorkspaceChanged;
         if (!string.IsNullOrWhiteSpace(WorkspaceService.Current))
         {
             _workspace = WorkspaceService.Current;

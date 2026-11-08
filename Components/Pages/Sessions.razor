@@ -108,8 +108,11 @@
 
     protected override void OnInitialized()
     {
-        SessionService.SessionListChanged += OnListChanged;
-        WorkspaceService.Changed += OnWorkspaceChanged;
+        if (RendererInfo.IsInteractive)
+        {
+            SessionService.SessionListChanged += OnListChanged;
+            WorkspaceService.Changed += OnWorkspaceChanged;
+        }
         _ = SessionService.EnsureHistoryAsync(Current.User);
         var uri  = new Uri(Nav.Uri);
         var qs   = QueryHelpers.ParseQuery(uri.Query);
