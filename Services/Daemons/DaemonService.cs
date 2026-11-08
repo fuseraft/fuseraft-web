@@ -46,6 +46,8 @@ public sealed class DaemonService : IHostedService
     }
 
     public event Action? Changed;
+    /// <summary>Fired when a result arrives for a task on any daemon.</summary>
+    public event Action<DaemonConnection, DaemonTask>? TaskFinished;
 
     public IReadOnlyList<DaemonConnection> Connections
     {
@@ -146,8 +148,12 @@ public sealed class DaemonService : IHostedService
     public Task StopAsync(CancellationToken cancellationToken) =>
         Task.WhenAll(Connections.Select(c => c.DisconnectAsync())).WaitAsync(cancellationToken);
 
-    private DaemonConnection NewConnection(DaemonEndpoint endpoint, bool configured) =>
-        new(endpoint, _broker, _transportFactory, configured, _store?.ClientId(endpoint.Name), _store);
+    private DaemonConnection NewConnection(DaemonEndpoint endpoint, bool configured)
+    {
+        var connection = new DaemonConnection(endpoint, _broker, _transportFactory, configured, _store?.ClientId(endpoint.Name), _store);
+        connection.TaskFinished += task => TaskFinished?.Invoke(connection, task);
+        return connection;
+    }
 
     private async Task ConnectAndCheckAsync(DaemonConnection connection)
     {

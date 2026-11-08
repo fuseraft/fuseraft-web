@@ -35,6 +35,9 @@ public sealed class SessionHostService : IDisposable
     /// <summary>Fired when the session list changes (new session, status change, etc.).</summary>
     public event Action? SessionListChanged;
 
+    /// <summary>Fired when a session this server ran succeeds, fails or is cancelled.</summary>
+    public event Action<ManagedSession>? SessionEnded;
+
     public SessionHostService(FuseraftCli cli, HitlBroker hitlBroker, UserStore users, ModelProfileRegistry profiles,
         ILogger<SessionHostService> logger)
     {
@@ -341,6 +344,7 @@ public sealed class SessionHostService : IDisposable
             Type = "session_end", Succeeded = succeeded, ErrorMessage = succeeded ? null : session.ErrorMessage,
         });
         SessionListChanged?.Invoke();
+        SessionEnded?.Invoke(session);
     }
 
     private ApprovalRelay NewRelay(ManagedSession session, IBridgeProcess proc) =>

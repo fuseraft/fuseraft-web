@@ -113,6 +113,23 @@ public sealed class DaemonConnectionTests
     }
 
     [Fact]
+    public async Task Result_FiresTaskFinished_OnceWithTheTask()
+    {
+        var c = await ConnectedAsync();
+        var finished = new List<DaemonTask>();
+        c.TaskFinished += t => { lock (finished) finished.Add(t); };
+        await c.DispatchAsync("write a haiku");
+        First.Push("""{"type":"queued","sessionId":"s1","position":0}""");
+
+        First.Push("""{"type":"result","sessionId":"s1","succeeded":false,"errorMessage":"boom"}""");
+        await Eventually(() => c.CanDispatch ? c : null);
+
+        lock (finished)
+            Assert.Equal(("write a haiku", DaemonTaskStatus.Failed, "boom"),
+                (finished.Single().Task, finished.Single().Status, finished.Single().ErrorMessage));
+    }
+
+    [Fact]
     public async Task Dispatch_WhileATaskIsRunning_IsRefused()
     {
         var c = await ConnectedAsync();

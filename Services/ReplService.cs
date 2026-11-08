@@ -14,6 +14,9 @@ public sealed record ReplMessage(string Role, string Text, IReadOnlyList<string>
 /// <summary>An <c>ask_user</c> question waiting for the chat's owner.</summary>
 public sealed record ReplQuestion(string Question, IReadOnlyList<string> Options, bool AllowOther);
 
+/// <summary>Something in a chat its owner may want to hear about while looking elsewhere.</summary>
+public enum ReplAlert { Replied, Question, Failed }
+
 public sealed class ActiveReplSession : IDisposable
 {
     /// <summary>Stable dictionary key assigned at creation; never changes.</summary>
@@ -81,6 +84,8 @@ public sealed class ReplService : IDisposable
     };
 
     public event Action<string>? SessionChanged;
+    /// <summary>Fired after <see cref="SessionChanged"/> when a chat replies, asks a question or fails.</summary>
+    public event Action<ActiveReplSession, ReplAlert>? Alert;
 
     public ReplService(ModelProfileRegistry profiles, FuseraftCli cli, HitlBroker hitl)
     {
@@ -228,6 +233,7 @@ public sealed class ReplService : IDisposable
 
     private async Task ReadLoopAsync(string key, IBridgeProcess bridge)
     {
+        ActiveReplSession? died = null;
         try
         {
             while (await bridge.Output.ReadLineAsync() is { } raw)
@@ -268,8 +274,10 @@ public sealed class ReplService : IDisposable
                 s.Error          = $"fuseraft exited unexpectedly (exit {exit}). {bridge.StderrTail.Split('\n').LastOrDefault()}".Trim();
                 s.StreamingText  = null;
                 s.StreamingTools = null;
+                died = s;
             }
             SessionChanged?.Invoke(key);
+            if (died is not null) Alert?.Invoke(died, ReplAlert.Failed);
         }
     }
 
@@ -278,6 +286,7 @@ public sealed class ReplService : IDisposable
     private void HandleEvent(string key, string type, JsonElement root)
     {
         if (!_sessions.TryGetValue(key, out var s)) return;
+        ReplAlert? alert = null;
 
         switch (type)
         {
@@ -315,6 +324,7 @@ public sealed class ReplService : IDisposable
                         if (o.GetString() is { Length: > 0 } option) options.Add(option);
                 s.Question = new ReplQuestion(Str(root, "question") ?? "", options,
                     !root.TryGetProperty("allowOther", out var ao) || ao.ValueKind != JsonValueKind.False);
+                alert = ReplAlert.Question;
                 break;
 
             case RelayBridge.ReplayedInput:
@@ -356,6 +366,7 @@ public sealed class ReplService : IDisposable
                         foreach (var item in tc.EnumerateArray())
                             if (item.GetString() is { } tn) tools.Add(tn);
                     s.Messages.Add(new ReplMessage("assistant", text, tools, DateTimeOffset.UtcNow));
+                    alert = ReplAlert.Replied;
                 }
                 s.Status        = ReplStatus.Idle;
                 s.StreamingText = null;
@@ -378,6 +389,7 @@ public sealed class ReplService : IDisposable
                 s.StreamingText = null;
                 s.StreamingTools = null;
                 s.Messages.Add(new ReplMessage("system", $"Error: {err}", [], DateTimeOffset.UtcNow));
+                alert = ReplAlert.Failed;
                 break;
 
             case "applied":
@@ -446,6 +458,7 @@ public sealed class ReplService : IDisposable
         }
 
         SessionChanged?.Invoke(key);
+        if (alert is { } a) Alert?.Invoke(s, a);
     }
 
     // ── User actions ─────────────────────────────────────────────────────────
@@ -480,24 +493,8 @@ public sealed class ReplService : IDisposable
         SessionChanged?.Invoke(key);
     }
 
-    internal static string ApprovalNote(PendingApproval r, bool approved)
-    {
-        var what = r.Kind switch
-        {
-            "shell_command"  => $"`{OneLine(r.Command)}`",
-            "file_write"     => $"{r.Action ?? "write_file"} `{r.Path}`",
-            "tool_action"    => $"`{r.Plugin}.{r.Action}`",
-            "route_approval" => $"the handoff from {r.SourceAgent} to {r.TargetAgent}",
-            _                => r.Kind,
-        };
-        return $"{(approved ? "✓ Approved" : "✕ Denied")} {what}";
-    }
-
-    private static string OneLine(string? s)
-    {
-        var flat = (s ?? "").ReplaceLineEndings(" ").Replace('`', '\'').Trim();
-        return flat.Length <= 120 ? flat : flat[..120] + "…";
-    }
+    internal static string ApprovalNote(PendingApproval r, bool approved) =>
+        $"{(approved ? "✓ Approved" : "✕ Denied")} {r.Summary}";
 
     /// <summary>Answers the open question; a null or blank <paramref name="answer"/> skips it.</summary>
     public void AnswerQuestion(WebUser user, string key, string? answer)
