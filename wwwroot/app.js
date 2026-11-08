@@ -20,6 +20,9 @@ new MutationObserver(() => {
   if (followChat && main?.querySelector('.repl-transcript')) main.scrollTop = main.scrollHeight;
 }).observe(document.body, { childList: true, subtree: true, characterData: true });
 
+// The address the browser shows, which Routes compares with the one its circuit started at.
+window.fuseraftAddress = () => location.href;
+
 // Notifications: a toast unless the reader is already on the page it's about, and, while they're looking
 // elsewhere, a count in the tab title and a desktop notification if they turned those on. The server only
 // sends a tab what its user may see; which groups to show is a choice per browser, kept here.

@@ -254,8 +254,11 @@ else
 
     protected override void OnInitialized()
     {
-        DaemonService.Changed       += OnChanged;
-        Broker.PendingChanged += OnChanged;
+        if (RendererInfo.IsInteractive)
+        {
+            DaemonService.Changed += OnChanged;
+            Broker.PendingChanged += OnChanged;
+        }
         Refresh();
         Select(_connections.FirstOrDefault()?.Id);
     }
@@ -286,7 +289,7 @@ else
     {
         foreach (var c in _connections) c.Changed -= OnChanged;
         _connections = [.. DaemonService.For(Current.User)];
-        foreach (var c in _connections) c.Changed += OnChanged;
+        if (RendererInfo.IsInteractive) foreach (var c in _connections) c.Changed += OnChanged;
         if (_selected is { } id && _connections.All(c => c.Id != id)) _selected = _connections.FirstOrDefault()?.Id;
         var name = Selected?.Endpoint.Name;
         _approvals = [.. Broker.GetPending(Current.User).Where(p => p.Source == ApprovalSource.Daemon && p.Origin == name)];

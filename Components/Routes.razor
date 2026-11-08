@@ -1,3 +1,6 @@
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
 <Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
         <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
@@ -16,3 +19,19 @@
         </LayoutView>
     </NotFound>
 </Router>
+
+@code {
+    // A link followed while this circuit was connecting changed the browser's address but not this router's,
+    // which still shows the page the circuit started at. Catch up with the browser.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !RendererInfo.IsInteractive) return;
+        string address;
+        try { address = await JS.InvokeAsync<string>("fuseraftAddress"); }
+        catch (JSDisconnectedException) { return; }
+        if (!string.Equals(WithoutFragment(address), WithoutFragment(Nav.Uri), StringComparison.Ordinal))
+            Nav.NavigateTo(address, replace: true);
+    }
+
+    private static string WithoutFragment(string uri) => uri.Split('#')[0];
+}
