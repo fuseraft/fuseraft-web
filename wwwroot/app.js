@@ -19,3 +19,6 @@ new MutationObserver(() => {
   const main = document.querySelector('.main-content');
   if (followChat && main?.querySelector('.repl-transcript')) main.scrollTop = main.scrollHeight;
 }).observe(document.body, { childList: true, subtree: true, characterData: true });
+
+// The address the browser shows, which Routes compares with the one its circuit started at.
+window.fuseraftAddress = () => location.href;
