@@ -1,0 +1,183 @@
+@page "/webhooks"
+@implements IDisposable
+@inject WebhookStore Store
+@inject WebhookNotifier Notifier
+@inject IOptions<WebhookOptions> Options
+@inject ILogger<Webhooks> Logger
+@using Microsoft.Extensions.Options
+@using fuseraft.Web.Services.Webhooks
+
+<PageTitle>Webhooks — Fuseraft</PageTitle>
+
+<div class="page-header">
+    <h1>Webhooks</h1>
+    <p class="muted">Your notifications, posted to a URL the moment they happen: to Slack, a chat bot, or your own service.</p>
+</div>
+
+@if (!Options.Value.MayAdd(Current.User))
+{
+    <p class="muted">@(Options.Value.Enabled ? "Only admins may add webhooks on this server." : "Webhooks are turned off on this server.")</p>
+}
+else
+{
+    @if (_error is not null) { <div class="error-banner">@_error</div> }
+
+    @foreach (var hook in _hooks)
+    {
+        var deliveries = Notifier.Deliveries(hook.Id);
+        <div class="card webhook-card">
+            <div class="card-body">
+                <div class="webhook-head">
+                    <div>
+                        <strong>@hook.Name</strong>
+                        <span class="badge badge-muted">@(hook.Format == WebhookFormat.Slack ? "Slack" : "JSON")</span>
+                        <div class="mono small muted webhook-url">@hook.Url</div>
+                    </div>
+                    <button class="toggle-btn @(hook.Enabled ? "toggle-on" : "toggle-off")"
+                            @onclick="() => Change(hook, h => h.Enabled = !h.Enabled)">@(hook.Enabled ? "On" : "Off")</button>
+                </div>
+                <div class="notify-options">
+                    <label><input type="checkbox" checked="@hook.Attention" @onchange="e => Change(hook, h => h.Attention = e.Value is true)" /> approvals and questions</label>
+                    <label><input type="checkbox" checked="@hook.Results" @onchange="e => Change(hook, h => h.Results = e.Value is true)" /> sessions, daemon tasks and scheduled jobs that finish or fail</label>
+                    <label><input type="checkbox" checked="@hook.Replies" @onchange="e => Change(hook, h => h.Replies = e.Value is true)" /> chat replies</label>
+                </div>
+                @if (_shownSecret?.Id == hook.Id)
+                {
+                    <div class="form-hint">Signing secret: <code class="webhook-secret">@_shownSecret.Value.Secret</code></div>
+                }
+                <div class="email-actions">
+                    <button class="btn btn-sm" @onclick="() => TestAsync(hook)" disabled="@(_testing == hook.Id)">@(_testing == hook.Id ? "Sending…" : "Send a test")</button>
+                    @if (hook.Format == WebhookFormat.Json)
+                    {
+                        <button class="btn btn-sm" @onclick="() => ShowSecret(hook)">Show secret</button>
+                        <button class="btn btn-sm" @onclick="() => NewSecret(hook)">New secret</button>
+                    }
+                    <button class="btn btn-sm btn-danger" @onclick="() => Delete(hook)">Delete</button>
+                </div>
+                @if (deliveries.Count > 0)
+                {
+                    <table class="data-table webhook-log">
+                        <tbody>
+                            @foreach (var d in deliveries.Take(5))
+                            {
+                                <tr>
+                                    <td class="muted nowrap">@d.At.ToLocalTime().ToString("MM/dd HH:mm:ss")</td>
+                                    <td><span class="badge @(d.Succeeded ? "badge-ok" : "badge-err")">@(d.Status?.ToString() ?? "—")</span></td>
+                                    <td>@d.Event@if (d.Error is not null) {<div class="small muted">@d.Error</div>}</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    }
+
+    @if (_hooks.Count < WebhookStore.MaxPerUser)
+    {
+        <h2 class="section-title">Add a webhook</h2>
+        <div class="card" style="max-width:560px">
+            <div class="card-body">
+                @if (_addError is not null) { <div class="error-banner">@_addError</div> }
+                <div class="form-group">
+                    <label class="form-label" for="webhook-name">Name</label>
+                    <input class="input" id="webhook-name" @bind="_name" placeholder="Team channel" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="webhook-url">URL</label>
+                    <input class="input" id="webhook-url" type="url" @bind="_url" placeholder="https://hooks.slack.com/services/…" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="webhook-format">Format</label>
+                    <select class="input" id="webhook-format" @bind="_format">
+                        <option value="@WebhookFormat.Json">JSON, signed</option>
+                        <option value="@WebhookFormat.Slack">Slack message</option>
+                    </select>
+                    <div class="form-hint">Slack message works with Slack's incoming webhooks, Mattermost, and Discord (add <code>/slack</code> to its URL). Each request carries a title, a one-line summary and a link, never command output or file contents.</div>
+                </div>
+                <button class="btn btn-primary" @onclick="Add">Add webhook</button>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private IReadOnlyList<Webhook> _hooks = [];
+    private string _name = "", _url = "";
+    private WebhookFormat _format;
+    private string? _error, _addError, _testing;
+    private (string Id, string Secret)? _shownSecret;
+
+    protected override void OnInitialized()
+    {
+        Load();
+        Notifier.Delivered += OnDelivered;
+    }
+
+    private void Load() => _hooks = Store.For(Current.User.Id);
+
+    private void OnDelivered(string id)
+    {
+        if (_hooks.Any(h => h.Id == id)) _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void Add()
+    {
+        _addError = WebhookAddress.Problem(_url, Options.Value)
+                    ?? (string.IsNullOrWhiteSpace(_name) ? "Give it a name." : null);
+        if (_addError is not null) return;
+        try
+        {
+            var hook = Store.Add(new Webhook { OwnerId = Current.User.Id, Name = _name.Trim(), Url = _url.Trim(), Format = _format });
+            if (hook.Format == WebhookFormat.Json) _shownSecret = (hook.Id, Store.Secret(hook.Id)!);
+            (_name, _url, _format) = ("", "", default);
+        }
+        catch (InvalidOperationException ex) { _addError = ex.Message; }
+        Load();
+    }
+
+    private void Change(Webhook hook, Action<Webhook> change)
+    {
+        if (!Mine(hook)) return;
+        Store.Update(hook.Id, change);
+        Load();
+    }
+
+    private void Delete(Webhook hook)
+    {
+        if (!Mine(hook)) return;
+        Store.Delete(hook.Id);
+        Load();
+    }
+
+    private void ShowSecret(Webhook hook)
+    {
+        if (!Mine(hook)) return;
+        _error = null;
+        if (Store.Secret(hook.Id) is { } secret) _shownSecret = (hook.Id, secret);
+        else _error = "This webhook's secret can't be read since the server's keys changed. Delete it and add it again.";
+    }
+
+    private void NewSecret(Webhook hook)
+    {
+        if (!Mine(hook)) return;
+        _shownSecret = (hook.Id, Store.RegenerateSecret(hook.Id));
+    }
+
+    private async Task TestAsync(Webhook hook)
+    {
+        if (!Mine(hook)) return;
+        _testing = hook.Id;
+        try { await Notifier.SendTestAsync(hook, Current.User); }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Test of webhook {Id} failed", hook.Id);
+            _error = "The test couldn't be sent.";
+        }
+        finally { _testing = null; }
+    }
+
+    private bool Mine(Webhook hook) => Store.Find(hook.Id)?.OwnerId == Current.User.Id;
+
+    public void Dispose() => Notifier.Delivered -= OnDelivered;
+}

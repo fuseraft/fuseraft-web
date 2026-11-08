@@ -16,7 +16,7 @@ secrets in the environment rather than the file.
 | `Fuseraft:DataDirectory` | `~/.fuseraft-web` | Accounts, cookie-signing keys, saved daemons, and new accounts' homes and workspaces (mode 700) |
 | `Fuseraft:RunSchedules` | `true` | Run every account's due [scheduled jobs](/fuseraft-web/guides/more/#schedule) once a minute |
 | `Fuseraft:KeyCertificate` | | A `.pfx` with an RSA key that encrypts the data-protection keys. See [What to back up](/fuseraft-web/deploy/backups/) |
-| `Fuseraft:PublicUrl` | | The address people reach the server at, such as `https://fuseraft.example.com`, for links in emails |
+| `Fuseraft:PublicUrl` | | The address people reach the server at, such as `https://fuseraft.example.com`, for links in emails and webhooks |
 | `ASPNETCORE_URLS` | `http://localhost:5000` | Where to listen |
 | `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | `false` | Trust `X-Forwarded-*` from a [reverse proxy](/fuseraft-web/deploy/reverse-proxy/). Only set it behind one |
 
@@ -57,6 +57,17 @@ For [notification emails](/fuseraft-web/guides/notifications/#email). Without `H
 | `Fuseraft:Email:UserName` | | Set it to sign in to the SMTP server; the password goes in `FUSERAFT_WEB_SMTP_PASSWORD` |
 | `Fuseraft:Email:WaitMinutes` | `5` | How long an approval or question waits unanswered before it's emailed |
 | `Fuseraft:Email:BatchSeconds` | `60` | How long to collect someone's notifications into one email |
+
+## Webhooks
+
+For [webhooks](/fuseraft-web/guides/notifications/#webhooks).
+
+| Key | Default | |
+|---|---|---|
+| `Fuseraft:Webhooks:Enabled` | `true` | Send webhooks at all |
+| `Fuseraft:Webhooks:AdminsOnly` | `false` | Only admins may add webhooks; other people's stop |
+| `Fuseraft:Webhooks:AllowedHosts` | | Hosts webhooks may reach although they're on this machine or a private network, also over plain `http` |
+| `Fuseraft:Webhooks:TimeoutSeconds` | `10` | How long to wait for a receiver to answer |
 
 ## Daemons
 

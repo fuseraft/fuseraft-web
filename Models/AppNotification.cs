@@ -1,6 +1,6 @@
 namespace fuseraft.Web.Models;
 
-public enum NotificationKind { Approval, Question, SessionFinished, SessionFailed, ChatReplied, ChatFailed, TaskFinished, TaskFailed, JobFinished, JobFailed }
+public enum NotificationKind { Approval, Question, SessionFinished, SessionFailed, ChatReplied, ChatFailed, TaskFinished, TaskFailed, JobFinished, JobFailed, Test }
 
 /// <summary>Something that happened in a user's sessions, chats, daemon tasks or scheduled jobs, for the browser to tell them about.</summary>
 /// <param name="OwnerId">The account it belongs to; null means only admins see it.</param>
