@@ -164,7 +164,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         _profiles = await ProfileService.ListAsync();
-        ProfileService.ProfilesChanged += OnProfilesChanged;
+        if (RendererInfo.IsInteractive) ProfileService.ProfilesChanged += OnProfilesChanged;
     }
 
     private void OnProfilesChanged() =>
