@@ -1,0 +1,243 @@
+@page "/defaults"
+@inject SettingsService Settings
+@using System.Globalization
+@using fuseraft.Web.Services.Cli
+
+<PageTitle>Defaults — Fuseraft</PageTitle>
+
+<div class="page-header">
+    <h1>Defaults</h1>
+    <p class="muted">
+        How your chats behave: sampling, limits, the memory and sub-agent models, and more. A change applies to your
+        next chat; a running one keeps what it started with. Models and API keys are on <a href="/model-profiles">Profiles</a>.
+    </p>
+</div>
+
+@if (_error is not null)
+{
+    <div class="error-banner">@_error</div>
+}
+
+@if (_loading)
+{
+    <p class="muted">Loading…</p>
+}
+else if (_settings.Count > 0)
+{
+    <div class="settings-toolbar">
+        <input class="input" type="search" placeholder="Search settings" aria-label="Search settings"
+               @bind="_query" @bind:event="oninput" />
+        <label class="settings-changed-only"><input type="checkbox" @bind="_changedOnly" /> Changed only</label>
+    </div>
+
+    var shown = 0;
+    @foreach (var group in Sections)
+    {
+        var rows = _settings.Where(s => group.Prefixes.Contains(Prefix(s.Key)) && Visible(s)).ToList();
+        if (rows.Count == 0) continue;
+        shown += rows.Count;
+        <section class="settings-section">
+            <h2>@group.Title</h2>
+            @foreach (var s in rows)
+            {
+                var key = s.Key;
+                <div class="setting-row @(CanReset(s) ? "modified" : "")">
+                    <div class="setting-head">
+                        <label class="form-label" for="@($"set-{key}")">@Label(key)</label>
+                        <code class="mono small muted">@key</code>
+                    </div>
+                    <div class="form-hint">@s.Description</div>
+                    <div class="setting-control">
+                        @switch (s.Kind)
+                        {
+                            case "bool":
+                                var on = (s.Value ?? s.Default ?? "false") == "true";
+                                <button id="@($"set-{key}")" class="toggle-btn @(on ? "toggle-on" : "toggle-off")" disabled="@(_saving == key)"
+                                        role="switch" aria-checked="@(on ? "true" : "false")"
+                                        @onclick='() => SaveAsync(key, on ? "false" : "true")'>@(on ? "On" : "Off")</button>
+                                break;
+                            case "choice":
+                                <select id="@($"set-{key}")" class="input setting-input" value="@(s.Value ?? s.Default)"
+                                        @onchange="e => SaveAsync(key, e.Value?.ToString() ?? string.Empty)">
+                                    @foreach (var c in s.Choices ?? [])
+                                    {
+                                        <option value="@c">@c@(c == s.Default ? " (default)" : "")</option>
+                                    }
+                                </select>
+                                break;
+                            case "integer":
+                            case "number":
+                                <input id="@($"set-{key}")" class="input setting-input setting-number" type="number"
+                                       min="@Num(s.Min)" max="@Num(s.Max)" step="@(s.Kind == "integer" ? "1" : "any")"
+                                       placeholder="@Placeholder(s)" @bind="_drafts[key]" @bind:after="() => SaveDraftAsync(key)" />
+                                @if (RangeText(s) is { Length: > 0 } range)
+                                {
+                                    <span class="small muted">@range</span>
+                                }
+                                break;
+                            default:
+                                <input id="@($"set-{key}")" class="input setting-input" spellcheck="false"
+                                       placeholder="@Placeholder(s)" @bind="_drafts[key]" @bind:after="() => SaveDraftAsync(key)" />
+                                break;
+                        }
+                        @if (CanReset(s))
+                        {
+                            <button class="btn btn-sm" disabled="@(_saving == key)" @onclick="() => ResetAsync(s)">Reset</button>
+                        }
+                        @if (_saving == key)
+                        {
+                            <span class="small muted">Saving…</span>
+                        }
+                        else if (_saved == key)
+                        {
+                            <span class="small muted">Saved</span>
+                        }
+                    </div>
+                    @if (_errors.TryGetValue(key, out var err))
+                    {
+                        <div class="setting-error">@err</div>
+                    }
+                </div>
+            }
+        </section>
+    }
+    @if (shown == 0)
+    {
+        <div class="empty-state">No settings match.</div>
+    }
+}
+
+@code {
+    private sealed record Section(string Title, string[] Prefixes);
+
+    // Keys group by the part before the dot; skills and skillCuration share one.
+    private static readonly Section[] Sections =
+    [
+        new("Model calls", ["provider"]),
+        new("Sampling",    ["sampling"]),
+        new("Chat",        ["repl"]),
+        new("Memory",      ["memory"]),
+        new("Sub-agents",  ["subagent"]),
+        new("Skills",      ["skills", "skillCuration"]),
+        new("Telemetry",   ["telemetry"]),
+    ];
+
+    private static readonly Dictionary<string, string> Labels = new()
+    {
+        ["skillCuration.enabled"]        = "Skill curation",
+        ["repl.hitlAutoApproveReadOnly"] = "Auto-approve read-only commands",
+        ["repl.yolo"]                    = "YOLO mode",
+    };
+
+    private static readonly Dictionary<string, string> Words = new()
+    {
+        ["api"] = "API", ["id"] = "ID", ["otlp"] = "OTLP", ["hitl"] = "HITL",
+        ["env"] = "environment", ["var"] = "variable", ["p"] = "P",
+    };
+
+    private List<WireSetting> _settings = [];
+    private readonly Dictionary<string, string> _drafts = [];
+    private readonly Dictionary<string, string> _errors = [];
+    private bool    _loading = true;
+    private string? _error;
+    private string  _query = "";
+    private bool    _changedOnly;
+    private string? _saving;
+    private string? _saved;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _settings = await Settings.ListAsync();
+            foreach (var s in _settings) _drafts[s.Key] = s.Value ?? "";
+        }
+        catch (FuseraftCliException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // A setting that can't be cleared and has no default (none are shown here today) has nothing to go back to.
+    private static bool CanReset(WireSetting s) =>
+        s.Value is not null && (s.Clearable || (s.Default is not null && s.Value != s.Default));
+
+    private bool Visible(WireSetting s)
+    {
+        if (_changedOnly && !CanReset(s)) return false;
+        var q = _query.Trim();
+        return q.Length == 0
+            || Label(s.Key).Contains(q, StringComparison.OrdinalIgnoreCase)
+            || s.Key.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || s.Description.Contains(q, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private Task SaveDraftAsync(string key)
+    {
+        var s = _settings.First(x => x.Key == key);
+        var draft = _drafts[key].Trim();
+        return draft == (s.Value ?? "") ? Task.CompletedTask : SaveAsync(key, draft);
+    }
+
+    private Task ResetAsync(WireSetting s) => SaveAsync(s.Key, s.Clearable ? "" : s.Default ?? "");
+
+    private async Task SaveAsync(string key, string value)
+    {
+        _saving = key;
+        _saved  = null;
+        try
+        {
+            var saved = await Settings.SetAsync(key, value);
+            _settings = [.. _settings.Select(x => x.Key == key ? saved : x)];
+            _drafts[key] = saved.Value ?? "";
+            _errors.Remove(key);
+            _saved = key;
+        }
+        catch (FuseraftCliException ex)
+        {
+            _errors[key] = ex.Message;
+        }
+        finally
+        {
+            _saving = null;
+        }
+    }
+
+    private static string Prefix(string key) => key[..key.IndexOf('.')];
+
+    /// <summary>"maxTurnInputTokens" → "Max turn input tokens".</summary>
+    private static string Label(string key)
+    {
+        if (Labels.TryGetValue(key, out var label)) return label;
+        var name = key[(key.IndexOf('.') + 1)..];
+        var words = System.Text.RegularExpressions.Regex.Split(name, "(?=[A-Z])")
+            .Where(w => w.Length > 0)
+            .Select(w => Words.TryGetValue(w.ToLowerInvariant(), out var r) ? r : w.ToLowerInvariant());
+        var text = string.Join(' ', words);
+        return char.ToUpperInvariant(text[0]) + text[1..];
+    }
+
+    private static string Placeholder(WireSetting s) => s switch
+    {
+        { Default: { } d }                                        => $"Default: {d}",
+        { Key: var k } when k.StartsWith("sampling.")             => "Provider's default",
+        { Key: "repl.contextBudget" }                             => "Model's estimate",
+        { Key: var k } when k.EndsWith(".provider")               => "Detected",
+        { Key: var k } when k.EndsWith(".model")                  => "Chat model",
+        _                                                         => "Not set",
+    };
+
+    private static string? Num(double? v) => v?.ToString(CultureInfo.InvariantCulture);
+
+    private static string RangeText(WireSetting s) => (s.Min, s.Max) switch
+    {
+        ({ } min, { } max) => $"{Num(min)}–{Num(max)}",
+        ({ } min, null)    => $"{Num(min)} or more",
+        (null, { } max)    => $"up to {Num(max)}",
+        _                  => "",
+    };
+}
