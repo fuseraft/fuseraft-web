@@ -165,3 +165,18 @@ public sealed record WireFunction
     public string Name        { get; init; } = "";
     public string Description { get; init; } = "";
 }
+
+/// <summary>A global setting from <c>fuseraft settings show --json</c>; <c>Value</c> is null when unset, which takes <c>Default</c>.</summary>
+public sealed record WireSetting
+{
+    public string        Key         { get; init; } = "";
+    /// <summary><c>text</c>, <c>bool</c>, <c>integer</c>, <c>number</c>, <c>choice</c> or <c>list</c>.</summary>
+    public string        Kind        { get; init; } = "";
+    public string        Description { get; init; } = "";
+    public string?       Value       { get; init; }
+    public string?       Default     { get; init; }
+    public double?       Min         { get; init; }
+    public double?       Max         { get; init; }
+    public List<string>? Choices     { get; init; }
+    public bool          Clearable   { get; init; }
+}

@@ -44,7 +44,7 @@ It listens on `http://localhost:5000`, so only this machine can reach it until y
 - **[Notifications](https://fuseraft.ai/fuseraft-web/guides/notifications/).** A note in the corner, a desktop notification, an email or a webhook (Slack or signed JSON) when an approval waits, work finishes or a chat replies.
 - **[Daemons](https://fuseraft.ai/fuseraft-web/guides/daemons/).** Attach to `fuseraft serve` on other machines over TLS, send it tasks and answer their approvals. Admins choose who may use each daemon.
 - **[Restarts don't end work](https://fuseraft.ai/fuseraft-web/deploy/restarts/).** Sessions and chats run in relay processes that outlive the server.
-- **[Model profiles, schedule, plugins, context, configs and memory](https://fuseraft.ai/fuseraft-web/guides/more/).**
+- **[Model profiles, defaults, schedule, plugins, context, configs and memory](https://fuseraft.ai/fuseraft-web/guides/more/).**
 
 To serve a team, run it [as a service](https://fuseraft.ai/fuseraft-web/deploy/service/) behind a [TLS reverse proxy](https://fuseraft.ai/fuseraft-web/deploy/reverse-proxy/). Every setting is in [Configuration](https://fuseraft.ai/fuseraft-web/reference/config/).
 

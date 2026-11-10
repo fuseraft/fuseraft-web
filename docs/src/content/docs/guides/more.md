@@ -1,6 +1,6 @@
 ---
 title: Profiles, schedule and more
-description: Model profiles, scheduled jobs, plugins, context, configs and memory.
+description: Model profiles, defaults, scheduled jobs, plugins, context, configs and memory.
 ---
 
 ## Model profiles
@@ -14,6 +14,18 @@ reaches only the processes you start:
 
 - as `FUSERAFT_PROFILE_{id}_KEY` for sessions, so `apiKeyEnvVar:` in a config resolves it;
 - as `FUSERAFT_API_KEY` for chats.
+
+## Defaults
+
+The **Defaults** page edits your `fuseraft settings`: temperature and the other sampling defaults,
+the memory and sub-agent models, chat limits, timeouts, telemetry and the rest, grouped and
+searchable. Each one shows its description, its default and the range it takes. A change is saved,
+and checked by fuseraft, when you leave the field; one fuseraft rejects shows why under it. Your next
+chat uses it, while a running one keeps what it started with.
+
+The model, provider and endpoint aren't here, because each chat takes them from its model profile,
+and neither are the settings that only shape fuseraft in a terminal (theme, dock, bell and banner).
+It needs fuseraft 1.23.0 or later.
 
 ## Schedule
 

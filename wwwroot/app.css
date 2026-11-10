@@ -2062,3 +2062,33 @@ code, pre, .mono { font-family: var(--mono); }
 .webhook-url { overflow-wrap: anywhere; margin-top: 4px; }
 .webhook-secret { overflow-wrap: anywhere; user-select: all; }
 .webhook-log { margin-top: 12px; }
+
+/* ===== Defaults (fuseraft settings) ===== */
+.settings-toolbar {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; gap: 14px;
+  max-width: 760px; padding: 10px 0; margin-bottom: 4px;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+}
+.settings-toolbar .input { flex: 1; min-width: 0; }
+.settings-changed-only { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 13px; color: var(--muted); }
+.settings-section { padding-top: 22px; max-width: 760px; }
+.settings-section h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.setting-row {
+  padding: 12px 0 14px 12px; margin-left: -12px;
+  border-left: 2px solid transparent; border-bottom: 1px solid var(--border2);
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-row.modified { border-left-color: var(--accent); }
+.setting-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.setting-head .form-label { margin-bottom: 0; }
+.setting-row .form-hint { max-width: 62ch; }
+.setting-control { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.setting-input { width: 100%; max-width: 420px; }
+.setting-input.setting-number { max-width: 160px; }
+select.setting-input { max-width: 200px; }
+.setting-error {
+  margin-top: 6px; padding: 6px 10px; max-width: 520px; font-size: 12px;
+  background: var(--err-dim); color: var(--err);
+  border: 1px solid color-mix(in srgb, var(--err) 30%, transparent); border-radius: var(--radius-sm);
+}
