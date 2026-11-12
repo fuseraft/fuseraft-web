@@ -12,6 +12,7 @@ using fuseraft.Web.Services;
 using fuseraft.Web.Services.Cli;
 using fuseraft.Web.Services.Daemons;
 using fuseraft.Web.Services.Email;
+using fuseraft.Web.Services.Mcp;
 using fuseraft.Web.Services.Relay;
 using fuseraft.Web.Services.Users;
 using fuseraft.Web.Services.Webhooks;
@@ -110,6 +111,9 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<WebhookNotifier>()
 builder.Services.AddSingleton(sp => new DaemonStore(Path.Combine(web.ResolvedDataDirectory, "daemons.json"),
     sp.GetRequiredService<IDataProtectionProvider>(), sp.GetRequiredService<ILogger<DaemonStore>>()));
 builder.Services.AddSingleton<DaemonService>();
+builder.Services.AddSingleton(sp => new McpServerStore(Path.Combine(web.ResolvedDataDirectory, "mcp-servers.json"),
+    sp.GetRequiredService<IDataProtectionProvider>(), sp.GetRequiredService<ILogger<McpServerStore>>()));
+builder.Services.AddSingleton<McpProbe>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DaemonService>());
 builder.Services.AddSingleton<ScheduleTicker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ScheduleTicker>());

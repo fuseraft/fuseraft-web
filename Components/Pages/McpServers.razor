@@ -1,0 +1,242 @@
+@page "/mcp-servers"
+@implements IDisposable
+@inject McpServerStore Store
+@inject McpProbe Probe
+@inject FuseraftCli Cli
+@inject PluginCatalogService Catalog
+@inject ILogger<McpServers> Logger
+@using fuseraft.Web.Services.Mcp
+
+<PageTitle>MCP Servers — Fuseraft</PageTitle>
+
+<div class="page-header">
+    <h1>MCP Servers</h1>
+    <p class="muted">Tool servers every account can use, reached over Streamable HTTP. A new chat connects each one that's
+        on; an orchestration uses one when an agent lists its name under <code>Plugins</code>. Chats and runs already
+        going keep what they started with.</p>
+</div>
+
+@if (_cliTooOld is { } installed)
+{
+    <div class="error-banner">The installed fuseraft is @installed, which ignores these servers. They need fuseraft
+        @McpServerStore.MinimumCliVersion or later; update it with <code>fuseraft update</code>.</div>
+}
+@if (_error is not null) { <div class="error-banner">@_error</div> }
+
+@if (_servers.Count == 0)
+{
+    <p class="muted">@(IsAdmin ? "None yet. Add one below." : "None yet. An admin can add them here.")</p>
+}
+
+@foreach (var s in _servers)
+{
+    <div class="card webhook-card">
+        <div class="card-body">
+            <div class="webhook-head">
+                <div>
+                    <span class="mcp-title">
+                        <strong class="mono">@s.Name</strong>
+                        @if (s.HasToken) { <span class="badge badge-muted">token</span> }
+                        @if (!s.Enabled) { <span class="badge badge-muted">off</span> }
+                    </span>
+                    <div class="mono small muted webhook-url">@s.Url</div>
+                </div>
+                @if (IsAdmin)
+                {
+                    <button class="toggle-btn @(s.Enabled ? "toggle-on" : "toggle-off")"
+                            @onclick="() => Store.SetEnabled(s.Id, !s.Enabled)">@(s.Enabled ? "On" : "Off")</button>
+                }
+            </div>
+
+            @if (_results.TryGetValue(s.Id, out var r))
+            {
+                @if (r.Ok)
+                {
+                    <div class="form-hint">
+                        <span class="badge badge-ok">connected</span>
+                        @(r.ServerName is null ? "" : $"{r.ServerName}, ")@r.Tools.Count tool(s)@(r.Tools.Count > 0 ? ":" : ".")
+                        <span class="mono">@string.Join(", ", r.Tools)</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="form-hint"><span class="badge badge-err">failed</span> @r.Error</div>
+                }
+            }
+
+            @if (IsAdmin)
+            {
+                @if (_editId == s.Id)
+                {
+                    <div class="form-group">
+                        <label class="form-label" for="mcp-edit-url">URL</label>
+                        <input class="input" id="mcp-edit-url" type="url" @bind="_editUrl" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="mcp-edit-token">Token</label>
+                        <input class="input" id="mcp-edit-token" type="password" autocomplete="off" @bind="_editToken"
+                               placeholder="@(s.HasToken ? "Leave empty to keep the saved token" : "None")" />
+                        @if (s.HasToken)
+                        {
+                            <label class="form-hint"><input type="checkbox" @bind="_editClearToken" /> Remove the saved token</label>
+                        }
+                    </div>
+                    <div class="email-actions">
+                        <button class="btn btn-sm btn-primary" @onclick="() => SaveEdit(s)">Save</button>
+                        <button class="btn btn-sm" @onclick="() => _editId = null">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <div class="email-actions">
+                        <button class="btn btn-sm" @onclick="() => TestAsync(s)" disabled="@(_testing == s.Id)">@(_testing == s.Id ? "Testing…" : "Test")</button>
+                        <button class="btn btn-sm" @onclick="() => StartEdit(s)">Edit</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(s)">Delete</button>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+@if (IsAdmin && _servers.Count < McpServerStore.MaxServers)
+{
+    <h2 class="section-title">Add an MCP server</h2>
+    <div class="card" style="max-width:560px">
+        <div class="card-body">
+            @if (_addError is not null) { <div class="error-banner">@_addError</div> }
+            <div class="form-group">
+                <label class="form-label" for="mcp-name">Name</label>
+                <input class="input" id="mcp-name" @bind="_name" placeholder="Sql" />
+                <div class="form-hint">What agents list under <code>Plugins</code>, and how chats show its tools. It can't be changed later.</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="mcp-url">URL</label>
+                <input class="input" id="mcp-url" type="url" @bind="_url" placeholder="http://localhost:8080/mcp" />
+                <div class="form-hint">Its Streamable HTTP endpoint, reached from this server.</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label" for="mcp-token">Token</label>
+                <input class="input" id="mcp-token" type="password" autocomplete="off" @bind="_token" placeholder="Optional" />
+                <div class="form-hint">Sent as <code>Authorization: Bearer</code>. It's kept encrypted, never shown again, and hidden from
+                    agents' tool output. For sql-mcp, make it one of its <code>App:AgentTokens</code>, so its log names this server.</div>
+            </div>
+            <button class="btn btn-primary" @onclick="AddAsync" disabled="@_adding">@(_adding ? "Testing…" : "Test and add")</button>
+            <button class="btn" @onclick="AddCheckedAsync" disabled="@_adding">Add without testing</button>
+        </div>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<McpServer> _servers = [];
+    private readonly Dictionary<string, McpProbeResult> _results = [];
+    private string _name = "", _url = "", _token = "";
+    private string? _editId, _editUrl, _editToken;
+    private bool _editClearToken, _adding;
+    private string? _error, _addError, _testing;
+    private Version? _cliTooOld;
+
+    private bool IsAdmin => Current.User.IsAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _servers = Store.All();
+        if (!RendererInfo.IsInteractive) return;
+        Store.Changed += OnChanged;
+        if (_servers.Count > 0 || IsAdmin)
+        {
+            var v = await Cli.VersionAsync();
+            if (v is not null && v < McpServerStore.MinimumCliVersion) _cliTooOld = v;
+        }
+    }
+
+    private void OnChanged() => _ = InvokeAsync(() => { _servers = Store.All(); StateHasChanged(); });
+
+    private async Task AddAsync()
+    {
+        if (!IsAdmin) return;
+        _addError = null;
+        _adding = true;
+        try
+        {
+            var result = await Probe.ProbeAsync(_url.Trim(), string.IsNullOrWhiteSpace(_token) ? null : _token.Trim());
+            if (!result.Ok)
+            {
+                _addError = $"{result.Error} Fix it, or add it without testing if the server isn't up yet.";
+                return;
+            }
+            if (await AddCheckedAsync() is { } added) _results[added.Id] = result;
+        }
+        finally { _adding = false; }
+    }
+
+    private async Task<McpServer?> AddCheckedAsync()
+    {
+        if (!IsAdmin) return null;
+        _addError = null;
+        try
+        {
+            // An agent's Plugins entry has to mean one thing.
+            if ((await BuiltInPluginsAsync()).Contains(_name.Trim(), StringComparer.OrdinalIgnoreCase))
+                throw new ArgumentException($"'{_name.Trim()}' is one of fuseraft's own plugins. Pick another name.");
+            var added = Store.Add(_name, _url, _token, Current.User.UserName);
+            (_name, _url, _token) = ("", "", "");
+            return added;
+        }
+        catch (ArgumentException ex) { _addError = ex.Message; return null; }
+    }
+
+    private async Task<IEnumerable<string>> BuiltInPluginsAsync()
+    {
+        try { return (await Catalog.GetPluginsAsync()).Select(p => p.Name); }
+        catch (FuseraftCliException) { return []; }
+    }
+
+    private async Task TestAsync(McpServer s)
+    {
+        if (!IsAdmin) return;
+        _testing = s.Id;
+        try
+        {
+            var token = s.HasToken ? Store.Token(s.Id) : null;
+            _results[s.Id] = s.HasToken && token is null
+                ? McpProbeResult.Failed("Its token can't be read since the server's keys changed. Edit it and enter the token again.")
+                : await Probe.ProbeAsync(s.Url, token);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Testing MCP server {Name} failed", s.Name);
+            _results[s.Id] = McpProbeResult.Failed("The test itself failed; the server log has why.");
+        }
+        finally { _testing = null; }
+    }
+
+    private void StartEdit(McpServer s)
+    {
+        (_editId, _editUrl, _editToken, _editClearToken) = (s.Id, s.Url, "", false);
+        _error = null;
+    }
+
+    private void SaveEdit(McpServer s)
+    {
+        if (!IsAdmin) return;
+        try
+        {
+            var token = _editClearToken ? "" : string.IsNullOrWhiteSpace(_editToken) ? null : _editToken;
+            Store.Update(s.Id, _editUrl ?? "", token);
+            _results.Remove(s.Id);
+            _editId = null;
+            _error  = null;
+        }
+        catch (ArgumentException ex) { _error = ex.Message; }
+    }
+
+    private void Delete(McpServer s)
+    {
+        if (!IsAdmin) return;
+        Store.Delete(s.Id);
+        _results.Remove(s.Id);
+    }
+
+    public void Dispose() => Store.Changed -= OnChanged;
+}

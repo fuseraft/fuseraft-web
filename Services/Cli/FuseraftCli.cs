@@ -30,7 +30,7 @@ public interface IBridgeProcess : IDisposable
 /// (docs/protocol.md in fuseraft-cli) rather than linking fuseraft's assemblies. Sessions and chats run through
 /// relays (<see cref="RelayHost"/>) so they outlive the server.
 /// </summary>
-public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptions>? web = null)
+public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptions>? web = null, Mcp.McpServerStore? mcp = null)
 {
     private readonly RelayLauncher? _relays = web is null ? null : new RelayLauncher(web.Value.ResolvedDataDirectory);
 
@@ -45,7 +45,7 @@ public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptio
     public string? Home { get; private init; }
 
     /// <summary>This CLI, running every command against <paramref name="home"/>: one user's sessions, memory and schedule.</summary>
-    public virtual FuseraftCli ForHome(string home) => new(options, web) { Home = home };
+    public virtual FuseraftCli ForHome(string home) => new(options, web, mcp) { Home = home };
 
     public async Task<List<T>> ListAsync<T>(params string[] args)
     {
@@ -103,7 +103,8 @@ public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptio
     {
         if (tag is null || _relays is null) return StartBridge(args, workingDirectory, environment);
 
-        var env = new Dictionary<string, string>(environment ?? new Dictionary<string, string>());
+        var env = new Dictionary<string, string>(McpEnvironment());
+        foreach (var (k, v) in environment ?? new Dictionary<string, string>()) env[k] = v;
         if (Home is not null)
         {
             Directory.CreateDirectory(Home);
@@ -179,6 +180,10 @@ public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptio
                 $"The installed fuseraft speaks protocol version {v.GetInt32()}, but this fuseraft-web speaks version {ProtocolVersion}. Install matching versions.");
     }
 
+    /// <summary>The MCP servers added on the MCP servers page, for every fuseraft this server starts.</summary>
+    private IReadOnlyDictionary<string, string> McpEnvironment() =>
+        mcp?.Environment() ?? new Dictionary<string, string>();
+
     private ProcessStartInfo StartInfo(IEnumerable<string> args, string? workingDirectory)
     {
         var psi = new ProcessStartInfo(Binary)
@@ -194,6 +199,7 @@ public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptio
             Directory.CreateDirectory(Home);
             psi.Environment["FUSERAFT_HOME"] = Home;
         }
+        foreach (var (k, v) in McpEnvironment()) psi.Environment[k] = v;
         foreach (var a in args) psi.ArgumentList.Add(a);
         return psi;
     }
