@@ -177,6 +177,8 @@ code, pre, .mono { font-family: var(--mono); }
 }
 
 .page-header h1 {
+  /* Its own width, so a description beside it doesn't squeeze a two-word title onto two lines. */
+  flex-shrink: 0;
   font-size: 28px;
   font-weight: 500;
   line-height: 1.15;
@@ -2062,6 +2064,9 @@ code, pre, .mono { font-family: var(--mono); }
 .webhook-url { overflow-wrap: anywhere; margin-top: 4px; }
 .webhook-secret { overflow-wrap: anywhere; user-select: all; }
 .webhook-log { margin-top: 12px; }
+
+/* ===== MCP servers ===== */
+.mcp-title { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 /* ===== Defaults (fuseraft settings) ===== */
 .settings-toolbar {

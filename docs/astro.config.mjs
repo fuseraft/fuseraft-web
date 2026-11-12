@@ -32,6 +32,7 @@ export default defineConfig({
 						'guides/approvals',
 						'guides/notifications',
 						'guides/daemons',
+						'guides/mcp-servers',
 						'guides/more',
 					],
 				},
