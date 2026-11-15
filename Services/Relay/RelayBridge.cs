@@ -194,7 +194,10 @@ public sealed class RelayBridge : IBridgeProcess
             if (type is "approval_response" or "question_response" or "interrupt") continue;
             var text = type == "user_input" ? TextOf(body) : type is null ? body : null;
             if (text is null) continue;
-            yield return $"{RelayLine.Input} " + JsonSerializer.Serialize(new { type = ReplayedInput, text, raw = type is null });
+            // A quiet command (the tools menu) was never in the chat, but its message_end still comes.
+            yield return $"{RelayLine.Input} " + (type == "user_input" && IsQuiet(body)
+                ? JsonSerializer.Serialize(new { type = ReplayedInput, text, raw = false, quiet = true })
+                : JsonSerializer.Serialize(new { type = ReplayedInput, text, raw = type is null }));
         }
     }
 
@@ -207,6 +210,12 @@ public sealed class RelayBridge : IBridgeProcess
             return doc.RootElement.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
         }
         catch (JsonException) { return null; }
+    }
+
+    private static bool IsQuiet(string line)
+    {
+        using var doc = JsonDocument.Parse(line);
+        return doc.RootElement.TryGetProperty("quiet", out var q) && q.ValueKind == JsonValueKind.True;
     }
 
     private static string? TextOf(string line)

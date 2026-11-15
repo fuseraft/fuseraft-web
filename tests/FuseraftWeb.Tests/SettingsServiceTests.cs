@@ -1,4 +1,5 @@
 using fuseraft.Web.Services;
+using fuseraft.Web.Models;
 using fuseraft.Web.Services.Cli;
 
 namespace FuseraftWeb.Tests;
@@ -78,5 +79,38 @@ public sealed class SettingsServiceTests
         var ex = await Assert.ThrowsAsync<FuseraftCliException>(() => new SettingsService(cli).ListAsync());
 
         Assert.Contains("no canned response", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("Shell", false, null,         false, "repl.disabledTools", "git_push,Shell")]
+    [InlineData("Shell", false, null,         true,  "repl.disabledTools", "git_push")]
+    [InlineData("Shell", false, "shell_run",  false, "repl.disabledTools", "git_push,shell,shell_run")]
+    [InlineData("Http",  true,  null,         true,  "repl.plugins",       "Docs,Http")]
+    [InlineData("Docs",  true,  null,         false, "repl.plugins",       "")]
+    [InlineData("Docs",  true,  "fetch_doc",  false, "repl.disabledTools", "git_push,shell,fetch_doc")]
+    public void ToolChange_SavesTheRightList(string category, bool optional, string? tool, bool on, string key, string value)
+    {
+        List<WireSetting> settings =
+        [
+            new() { Key = "repl.disabledTools", Kind = "list", Value = "git_push, shell" },
+            new() { Key = "repl.plugins",       Kind = "list", Value = "Docs" },
+        ];
+        var c = new WireToolCategory { Name = category, Optional = optional, Enabled = !on };
+
+        Assert.Equal((key, value), SettingsService.ToolChange(settings, c, tool, on));
+    }
+
+    [Fact]
+    public async Task ListTools_IsNull_WithAnOlderCli()
+    {
+        var cli = new FakeCli();
+        Assert.Null(await new SettingsService(cli).ListToolsAsync());
+
+        cli.Responses["settings tools --json"] = """
+            {"protocolVersion":1,"items":[{"name":"mcp:docs","description":"d","optional":false,"enabled":true,"tools":null}]}
+            """;
+        var c = Assert.Single((await new SettingsService(cli).ListToolsAsync())!);
+        Assert.Equal("docs", c.Label);
+        Assert.Null(c.Tools);
     }
 }

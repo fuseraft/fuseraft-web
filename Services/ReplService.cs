@@ -38,6 +38,13 @@ public sealed class ActiveReplSession : IDisposable
     public ReplQuestion? Question    { get; set; }
     /// <summary>The chat takes messages and commands while it's busy (fuseraft v1.20.0 or later).</summary>
     public bool       InputWhileBusy { get; init; }
+    /// <summary>The chat's tools, from its <c>tools</c> event; null with a fuseraft from before v1.27.0.</summary>
+    public WireChatTools? Tools      { get; set; }
+    /// <summary>A tools change is on its way to the CLI and its answer hasn't come back.</summary>
+    public bool       ToolsChanging  => Volatile.Read(ref QuietPending) > 0;
+
+    // Quiet commands sent whose message_end hasn't arrived; that message_end isn't the end of a reply.
+    internal int QuietPending;
 
     public List<ReplMessage> Messages { get; } = [];
 
@@ -308,8 +315,21 @@ public sealed class ReplService : IDisposable
                 break;
 
             case "title":
-                // Also sent when /switch or /fork switch moves the chat to another session.
+                // Also sent when /switch, /fork switch or /clear moves the chat to another session.
                 s.SessionId = Str(root, "sessionId") ?? s.SessionId;
+                break;
+
+            case "cleared":
+                // /clear started a new chat in this process; the old one is saved and listed under Recent Chats.
+                s.SessionId = Str(root, "sessionId") ?? s.SessionId;
+                s.Messages.Clear();
+                s.Question = null;
+                s.Error    = null;
+                break;
+
+            case "tools":
+                try { s.Tools = root.Deserialize<WireChatTools>(FuseraftCli.JsonOpts); }
+                catch (JsonException) { }
                 break;
 
             case "approval_request":
@@ -331,7 +351,9 @@ public sealed class ReplService : IDisposable
                 // Something typed before this server took over, replayed so the chat reads as it did.
                 var typed = Str(root, "text") ?? "";
                 var raw   = root.TryGetProperty("raw", out var r) && r.ValueKind == JsonValueKind.True;
-                if (raw && typed == "/clear")
+                if (root.TryGetProperty("quiet", out var q) && q.ValueKind == JsonValueKind.True)
+                    Interlocked.Increment(ref s.QuietPending);
+                else if (raw && typed == "/clear")
                     s.Messages.Clear();
                 else if (!raw)
                 {
@@ -359,6 +381,12 @@ public sealed class ReplService : IDisposable
                 break;
 
             case "message_end":
+                // The end of a quiet command, which showed nothing in the chat.
+                if (Volatile.Read(ref s.QuietPending) > 0)
+                {
+                    Interlocked.Decrement(ref s.QuietPending);
+                    break;
+                }
                 if (s.StreamingText is { Length: > 0 } text)
                 {
                     var tools = new List<string>();
@@ -509,6 +537,32 @@ public sealed class ReplService : IDisposable
             [], DateTimeOffset.UtcNow));
         SessionChanged?.Invoke(key);
         WriteQuestionResponse(s, answer);
+    }
+
+    /// <summary>
+    /// Turns a tool category or a single tool on or off for this chat (<c>/tools enable|disable</c>), or saves the chat's
+    /// tools as the defaults (<c>save</c>) or goes back to them (<c>reset</c>). Not while a reply runs: the line would
+    /// join it as an interjection. The chat's next <c>tools</c> event shows the result.
+    /// </summary>
+    public bool ChangeTools(WebUser user, string key, string action, string? name = null)
+    {
+        if (GetSession(user, key) is not { Tools: { } tools } s || s.Status == ReplStatus.Thinking) return false;
+        var known = name is not null && tools.Categories.Any(c =>
+            c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+            || (c.Tools ?? []).Any(t => t.Name.Equals(name, StringComparison.OrdinalIgnoreCase)));
+        var command = (action, known) switch
+        {
+            ("enable" or "disable", true) => $"/tools {action} {name}",
+            ("save" or "reset", _) when name is null => $"/tools {action}",
+            _ => null,
+        };
+        if (command is null) return false;
+
+        Interlocked.Increment(ref s.QuietPending);
+        SessionChanged?.Invoke(key);
+        var json = JsonSerializer.Serialize(new { type = "user_input", text = command, quiet = true }, _jsonOpts);
+        try { s.Bridge?.Input.WriteLine(json); } catch { }
+        return true;
     }
 
     public void ClearSession(WebUser user, string key)

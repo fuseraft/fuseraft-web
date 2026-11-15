@@ -1,0 +1,112 @@
+@* A switch for each tool category and each tool in it, with the tools folded under their category. Used by a chat's
+   tools menu (what that chat has on) and the Defaults page (what new chats start with). *@
+
+@if (Visible.Count == 0)
+{
+    <div class="ts-empty">No tools match.</div>
+}
+@foreach (var (c, tools) in Visible)
+{
+    var open    = Query.Trim().Length > 0 || _open.Contains(c.Name);
+    var usable  = c.Enabled && c.Blocked is null;
+    <div class="ts-cat @(open ? "open" : "") @(Modified(c) ? "modified" : "")">
+        <div class="ts-head">
+            <button type="button" class="ts-twisty" aria-expanded="@(open ? "true" : "false")"
+                    aria-label="@($"Show {c.Label}'s tools")" disabled="@(c.Tools is null)"
+                    @onclick="() => Fold(c.Name)">▶</button>
+            <span class="ts-text" @onclick="() => Fold(c.Name)">
+                <span class="ts-name">
+                    @c.Label
+                    @if (c.IsMcp) { <span class="badge badge-muted">MCP</span> }
+                    else if (c.Optional && !Chat) { <span class="badge badge-muted" title="Off unless you turn it on">optional</span> }
+                    @if (c.Blocked is { } why) { <span class="badge badge-warn">@why</span> }
+                </span>
+                <span class="ts-desc">@c.Description</span>
+            </span>
+            @if (c.Tools is { } all)
+            {
+                <span class="ts-count">@(usable ? all.Count(t => t.Enabled && t.Blocked is null) : 0)/@all.Count</span>
+            }
+            <button type="button" class="ts-switch" role="switch" aria-checked="@(c.Enabled ? "true" : "false")"
+                    aria-label="@c.Label" title="@CategoryTip(c)" disabled="@(Disabled || c.Blocked is not null)"
+                    @onclick="() => OnToggle.InvokeAsync(new(c.Name, null, !c.Enabled))"></button>
+        </div>
+        @if (open)
+        {
+            <div class="ts-tools">
+                @if (c.Tools is null)
+                {
+                    <div class="ts-none">Its tools are listed in a chat's tools menu once the chat loads them.</div>
+                }
+                @foreach (var t in tools)
+                {
+                    var on = usable && t.Blocked is null;
+                    <div class="ts-tool @(on ? "" : "dim") @(!Chat && !t.Enabled ? "modified" : "")">
+                        <span class="ts-text">
+                            <code class="ts-name">@t.Name @if (t.Blocked is { } held) { <span class="badge badge-warn">@held</span> }</code>
+                            <span class="ts-desc" title="@t.Description">@t.Description</span>
+                        </span>
+                        <button type="button" class="ts-switch" role="switch" aria-checked="@(t.Enabled ? "true" : "false")"
+                                aria-label="@t.Name" title="@ToolTip(c, t)" disabled="@(Disabled || !on)"
+                                @onclick="() => OnToggle.InvokeAsync(new(c.Name, t.Name, !t.Enabled))"></button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    public sealed record Toggle(string Category, string? Tool, bool On);
+
+    [Parameter, EditorRequired] public IReadOnlyList<WireToolCategory> Categories { get; set; } = [];
+    [Parameter] public string Query { get; set; } = "";
+    /// <summary>Only categories that differ from how fuseraft ships (Defaults page).</summary>
+    [Parameter] public bool ChangedOnly { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    /// <summary>A chat's switches rather than the saved defaults.</summary>
+    [Parameter] public bool Chat { get; set; }
+    [Parameter] public EventCallback<Toggle> OnToggle { get; set; }
+
+    private readonly HashSet<string> _open = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The categories the search and filter leave, each with the tools to show.</summary>
+    public List<(WireToolCategory Category, List<WireTool> Tools)> Visible => Filter(Categories, Query, ChangedOnly);
+
+    public static List<(WireToolCategory, List<WireTool>)> Filter(IEnumerable<WireToolCategory> categories, string query, bool changedOnly)
+    {
+        var q = query.Trim();
+        bool Hit(string name, string desc) => q.Length == 0
+            || name.Contains(q, StringComparison.OrdinalIgnoreCase) || desc.Contains(q, StringComparison.OrdinalIgnoreCase);
+        var list = new List<(WireToolCategory, List<WireTool>)>();
+        foreach (var c in categories)
+        {
+            if (changedOnly && !Modified(c)) continue;
+            var catHit = Hit(c.Name, c.Description) || (q.Length > 0 && "tools".Contains(q, StringComparison.OrdinalIgnoreCase));
+            var tools  = (c.Tools ?? []).Where(t => catHit || Hit(t.Name, t.Description)).ToList();
+            if (catHit || tools.Count > 0) list.Add((c, tools));
+        }
+        return list;
+    }
+
+    /// <summary>Differs from how fuseraft ships: an optional plugin turned on, or anything else turned off.</summary>
+    public static bool Modified(WireToolCategory c) =>
+        (c.Optional ? c.Enabled : !c.Enabled) || (c.Tools ?? []).Any(t => !t.Enabled);
+
+    private void Fold(string name)
+    {
+        if (!_open.Remove(name)) _open.Add(name);
+    }
+
+    private string CategoryTip(WireToolCategory c) =>
+        c.Blocked is not null ? $"Safe mode is keeping {c.Label} off"
+        : Chat ? (c.Enabled ? $"Turn {c.Label} off for this chat" : $"Turn {c.Label} on for this chat")
+        : (c.Enabled ? "New chats start with it on" : "New chats start with it off");
+
+    private string ToolTip(WireToolCategory c, WireTool t) =>
+        t.Blocked == "safe mode" ? "Safe mode is keeping this off"
+        : t.Blocked is not null ? "Off by /tools restrict"
+        : !c.Enabled ? $"Turn {c.Label} on to choose its tools"
+        : Chat ? (t.Enabled ? "Turn off for this chat" : "Turn on for this chat")
+        : (t.Enabled ? "New chats start with it on" : "New chats start with it off");
+}

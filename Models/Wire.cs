@@ -180,3 +180,42 @@ public sealed record WireSetting
     public List<string>? Choices     { get; init; }
     public bool          Clearable   { get; init; }
 }
+
+/// <summary>
+/// A tool category: from <c>fuseraft settings tools --json</c> (what new chats start with) or a chat's <c>tools</c> event
+/// (what that chat has). <c>Tools</c> is null for skills and MCP servers until a chat loads them.
+/// </summary>
+public sealed record WireToolCategory
+{
+    public string          Name        { get; init; } = "";
+    public string          Description { get; init; } = "";
+    /// <summary>Off unless <c>repl.plugins</c> names it.</summary>
+    public bool            Optional    { get; init; }
+    public bool            Enabled     { get; init; }
+    /// <summary>Chat only: <c>"safe mode"</c> when safe mode is keeping it off.</summary>
+    public string?         Blocked     { get; init; }
+    public List<WireTool>? Tools       { get; init; }
+
+    public bool IsMcp => Name.StartsWith("mcp:", StringComparison.OrdinalIgnoreCase);
+    public string Label => IsMcp ? Name[4..] : Name;
+}
+
+public sealed record WireTool
+{
+    public string  Name        { get; init; } = "";
+    public string  Description { get; init; } = "";
+    public bool    Enabled     { get; init; }
+    /// <summary>Chat only: <c>"safe mode"</c> or <c>"restricted"</c> when something else is keeping it off.</summary>
+    public string? Blocked     { get; init; }
+}
+
+/// <summary>A chat's <c>tools</c> event: its tools, sent after <c>ready</c> and after anything changes them.</summary>
+public sealed record WireChatTools
+{
+    public bool                   SafeMode        { get; init; }
+    /// <summary>How many tools the model is offered.</summary>
+    public int                    Active          { get; init; }
+    /// <summary>False when the chat's switches differ from what new chats start with.</summary>
+    public bool                   MatchesDefaults { get; init; }
+    public List<WireToolCategory> Categories      { get; init; } = [];
+}
