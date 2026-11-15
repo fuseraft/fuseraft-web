@@ -27,6 +27,10 @@ The model, provider and endpoint aren't here, because each chat takes them from 
 and neither are the settings that only shape fuseraft in a terminal (theme, dock, bell and banner).
 It needs fuseraft 1.23.0 or later.
 
+With fuseraft 1.27.0 or later, a **Tools** section turns tool categories and single tools on or off
+for new chats. It saves `repl.disabledTools`, or `repl.plugins` for the optional categories, which
+start off. To change the chat you're in, use its **Tools** button.
+
 ## Schedule
 
 The **Schedule** page adds, enables, disables and removes `fuseraft schedule` jobs: a name, a cron

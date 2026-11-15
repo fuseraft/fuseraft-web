@@ -139,6 +139,84 @@ public sealed class ReplServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Cleared_EmptiesTheChat_AndFollowsTheNewSession()
+    {
+        var (repl, bob, key, bridge) = await ReplyInProgressAsync();
+        bridge.Send(new { type = "message_end", turnIndex = 1, toolCalls = Array.Empty<string>() });
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the reply to end");
+
+        repl.SendMessage(bob, key, "/clear");
+        bridge.Send(new { type = "text", text = "Started a new chat." })
+              .Send(new { type = "cleared", sessionId = "r9", previousSessionId = "r1" })
+              .Send(new { type = "title", sessionId = "r9", title = (string?)null, autoTitle = (string?)null })
+              .Send(new { type = "message_end", turnIndex = 0, toolCalls = Array.Empty<string>() });
+
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the command to end");
+        var chat = repl.GetSession(bob, key)!;
+        Assert.Equal("r9", chat.SessionId);
+        Assert.Empty(chat.Messages);
+    }
+
+    private static object Tools(bool matchesDefaults = true, bool shellOn = true) => new
+    {
+        type = "tools", safeMode = false, active = 3, matchesDefaults,
+        categories = new object[]
+        {
+            new { name = "Shell", description = "Run commands", optional = false, enabled = shellOn, blocked = (string?)null,
+                  tools = new[] { new { name = "shell_run", description = "Run", enabled = true, blocked = (string?)null } } },
+            new { name = "Git", description = "Git", optional = false, enabled = true, blocked = (string?)null,
+                  tools = new[] { new { name = "git_commit", description = "Commit", enabled = true, blocked = (string?)null } } },
+        },
+    };
+
+    [Fact]
+    public async Task ToolsChange_GoesQuietly_AndItsEndIsntAReply()
+    {
+        var bob = _accounts.Add("bob", roots: ["/w"]);
+        await _profiles.For(bob).SaveAsync(new ModelProfile { Id = "p1", Name = "Grok", ModelId = "grok-4.7" }, "sk-bob");
+        var bridge = new FakeBridge().Send(Ready()).Send(Tools());
+        _cli.Bridges.Enqueue(bridge);
+        var repl = new ReplService(_profiles, _cli, _broker);
+        var key  = await repl.CreateSessionAsync(bob, "p1", "", "/w");
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Tools is not null, "the tools");
+
+        Assert.True(repl.ChangeTools(bob, key, "disable", "Shell"));
+        Assert.True(repl.GetSession(bob, key)!.ToolsChanging);
+        // Sent right behind it, before the command's message_end comes back.
+        repl.SendMessage(bob, key, "what changed?");
+        bridge.Send(Tools(matchesDefaults: false, shellOn: false))
+              .Send(new { type = "message_end", turnIndex = 0, toolCalls = Array.Empty<string>() });
+
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Tools!.MatchesDefaults == false, "the new tools");
+        await Wait.UntilAsync(() => !repl.GetSession(bob, key)!.ToolsChanging, "the command to end");
+        var chat = repl.GetSession(bob, key)!;
+        Assert.False(chat.Tools!.Categories[0].Enabled);
+        Assert.Equal(ReplStatus.Thinking, chat.Status); // still waiting on the reply to "what changed?"
+        Assert.Equal(["what changed?"], chat.Messages.Select(m => m.Text));
+        Assert.Contains("""{"type":"user_input","text":"/tools disable Shell","quiet":true}""", bridge.InputLines);
+    }
+
+    [Fact]
+    public async Task ToolsChange_OnlyNamesTheChatHas_AndNotMidReply()
+    {
+        var (repl, bob, key, bridge) = await ReplyInProgressAsync();
+        bridge.Send(Tools());
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Tools is not null, "the tools");
+
+        Assert.False(repl.ChangeTools(bob, key, "disable", "Shell")); // the reply is still streaming
+
+        bridge.Send(new { type = "message_end", turnIndex = 1, toolCalls = Array.Empty<string>() });
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the reply to end");
+        Assert.False(repl.ChangeTools(bob, key, "disable", "Shell\n/exit"));
+        Assert.False(repl.ChangeTools(bob, key, "restrict", "Shell"));
+        Assert.False(repl.ChangeTools(bob, key, "save", "Shell"));
+        Assert.False(repl.ChangeTools(_accounts.Alice, key, "save"));
+        Assert.True(repl.ChangeTools(bob, key, "enable", "git_commit"));
+        Assert.True(repl.ChangeTools(bob, key, "save"));
+        Assert.Equal(2, bridge.InputLines.Count(l => l.Contains("\"quiet\":true")));
+    }
+
+    [Fact]
     public async Task MidReply_MessageGoesToTheCli_BelowWhatStreamedSoFar()
     {
         var (repl, bob, key, bridge) = await ReplyInProgressAsync();

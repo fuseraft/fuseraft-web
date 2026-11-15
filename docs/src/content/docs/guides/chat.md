@@ -28,10 +28,22 @@ When the agent is blocked on a decision that's yours to make, it asks a multiple
 in the chat. Pick an option, type your own answer if the question allows it, or **Skip** to let the
 agent use its best judgment. The reply waits until you do; **Stop** skips the question.
 
+## Tools
+
+With fuseraft v1.27.0 or later, the **Tools** button above the chat shows how many tools the model
+is offered. It opens a switch for each tool category and each tool in it, for this chat only.
+**Save as default** makes new chats start with the same tools, and **Reset** goes back to your
+defaults. Tools can't be changed while a reply streams, and safe mode keeps Shell, Git and Http off
+until `/safe-mode off`. The defaults are also on the [Defaults](/fuseraft-web/guides/more/#defaults)
+page.
+
 ## Slash commands
 
 Slash commands such as `/model` or `/compact` go to the CLI, which handles them as it does in the
 terminal. See the fuseraft [REPL docs](/fuseraft-cli/repl/) for the list.
+
+**Clear** (or `/clear`) starts a new chat in the same workspace. With fuseraft v1.27.0 or later, the
+chat you leave is saved and stays in **Recent Chats**.
 
 ## Saved chats
 

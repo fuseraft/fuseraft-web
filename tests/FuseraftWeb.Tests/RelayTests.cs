@@ -138,6 +138,21 @@ public sealed class RelayTests : IAsyncDisposable
     }
 
     [Fact]
+    public void Replay_MarksQuietCommands()
+    {
+        string[] backlog =
+        [
+            """i {"type":"user_input","text":"/tools disable Shell","quiet":true}""",
+            """i {"type":"user_input","text":"hello"}""",
+        ];
+
+        var replay = RelayBridge.Replay(backlog).ToList();
+
+        Assert.Contains("\"quiet\":true", replay[0]);
+        Assert.DoesNotContain("quiet", replay[1]);
+    }
+
+    [Fact]
     public void Replay_DropsAnsweredAndInterruptedQuestions()
     {
         string[] backlog =

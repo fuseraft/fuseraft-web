@@ -130,6 +130,13 @@ else
                     }
                 }
                 <div style="margin-left:auto;display:flex;gap:6px">
+                    @if (session.Tools is { } chatTools)
+                    {
+                        <button class="btn btn-sm @(_toolsOpen ? "active" : "")" aria-expanded="@(_toolsOpen ? "true" : "false")"
+                                title="Choose the tools this chat can use" @onclick="() => _toolsOpen = !_toolsOpen">
+                            Tools <span class="muted">@ActiveCount(chatTools)/@chatTools.Categories.Sum(c => c.Tools?.Count ?? 0)</span>
+                        </button>
+                    }
                     <button class="btn btn-sm" @onclick="Clear"
                             disabled="@(session.Status == ReplStatus.Thinking)">
                         Clear
@@ -137,6 +144,39 @@ else
                     <button class="btn btn-sm" @onclick="CloseSession">Close</button>
                 </div>
             </div>
+
+            @if (_toolsOpen && session.Tools is { } menu)
+            {
+                var busy = session.Status == ReplStatus.Thinking;
+                <section class="repl-tools" aria-label="Tools">
+                    <div class="repl-tools-head">
+                        <h2>Tools</h2>
+                        <span class="muted small">@ActiveCount(menu) of @menu.Categories.Sum(c => c.Tools?.Count ?? 0) on in this chat</span>
+                        <button class="btn btn-sm" style="margin-left:auto" @onclick="() => _toolsOpen = false">Close</button>
+                    </div>
+                    @if (menu.SafeMode)
+                    {
+                        <p class="form-hint">Safe mode is on: Shell, Git and Http stay off until <code>/safe-mode off</code>.</p>
+                    }
+                    @if (busy)
+                    {
+                        <p class="form-hint">You can change tools once the reply finishes.</p>
+                    }
+                    <input class="input repl-tools-filter" type="search" placeholder="Filter tools" aria-label="Filter tools"
+                           @bind="_toolsQuery" @bind:event="oninput" />
+                    <div class="repl-tools-list">
+                        <ToolSwitches Categories="menu.Categories" Query="@_toolsQuery" Chat="true"
+                                      Disabled="@(busy || session.ToolsChanging)" OnToggle="ToggleTool" />
+                    </div>
+                    <div class="repl-tools-foot">
+                        <span class="muted small">@(menu.MatchesDefaults ? "New chats start with these tools." : "New chats start with your saved defaults.")</span>
+                        <button class="btn btn-sm" disabled="@(menu.MatchesDefaults || busy || session.ToolsChanging)"
+                                title="Start new chats with the tools on now" @onclick='() => ChangeTools("save")'>Save as default</button>
+                        <button class="btn btn-sm" disabled="@(menu.MatchesDefaults || busy || session.ToolsChanging)"
+                                title="Go back to the tools new chats start with" @onclick='() => ChangeTools("reset")'>Reset</button>
+                    </div>
+                </section>
+            }
 
             @if (session.Error is not null)
             {
@@ -243,6 +283,8 @@ else
     private string  _selectedProfileId = "";
     private string  _systemPrompt    = "";
     private bool    _starting        = false;
+    private bool    _toolsOpen;
+    private string  _toolsQuery      = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -338,6 +380,19 @@ else
         _input = "";
         ReplService.SendMessage(Current.User, _activeSessionId, text);
     }
+
+    private void ToggleTool(ToolSwitches.Toggle t) =>
+        ChangeTools(t.On ? "enable" : "disable", t.Tool ?? t.Category);
+
+    private void ChangeTools(string action, string? name = null)
+    {
+        if (_activeSessionId is not null) ReplService.ChangeTools(Current.User, _activeSessionId, action, name);
+    }
+
+    // What the model is offered: tools switched on in a category that's on, and nothing safe mode or a restriction holds back.
+    private static int ActiveCount(WireChatTools tools) => tools.Categories
+        .Where(c => c.Enabled && c.Blocked is null)
+        .Sum(c => (c.Tools ?? []).Count(t => t.Enabled && t.Blocked is null));
 
     private void Cancel() => ReplService.CancelSession(Current.User, _activeSessionId!);
 
