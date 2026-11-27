@@ -12,7 +12,7 @@
 <div class="page-header">
     <h1>MCP Servers</h1>
     <p class="muted">Tool servers every account can use, reached over Streamable HTTP. A new chat connects each one that's
-        on; an orchestration uses one when an agent lists its name under <code>Plugins</code>. Chats and runs already
+        on; an orchestration uses one when an agent lists its name under <code>tools</code>. Chats and runs already
         going keep what they started with.</p>
 </div>
 
@@ -108,7 +108,7 @@
             <div class="form-group">
                 <label class="form-label" for="mcp-name">Name</label>
                 <input class="input" id="mcp-name" @bind="_name" placeholder="Sql" />
-                <div class="form-hint">What agents list under <code>Plugins</code>, and how chats show its tools. It can't be changed later.</div>
+                <div class="form-hint">What agents list under <code>tools</code>, and how chats show its tools. It can't be changed later.</div>
             </div>
             <div class="form-group">
                 <label class="form-label" for="mcp-url">URL</label>
@@ -176,7 +176,7 @@
         _addError = null;
         try
         {
-            // An agent's Plugins entry has to mean one thing.
+            // An agent's tools entry has to mean one thing.
             if ((await BuiltInPluginsAsync()).Contains(_name.Trim(), StringComparer.OrdinalIgnoreCase))
                 throw new ArgumentException($"'{_name.Trim()}' is one of fuseraft's own plugins. Pick another name.");
             var added = Store.Add(_name, _url, _token, Current.User.UserName);

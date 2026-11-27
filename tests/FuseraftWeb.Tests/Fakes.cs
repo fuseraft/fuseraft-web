@@ -49,6 +49,17 @@ internal sealed class FakeCli() : FuseraftCli(Options.Create(new FuseraftCliOpti
         return Task.CompletedTask;
     }
 
+    public List<(string[] Args, string Cwd)> RunsIn { get; } = [];
+    /// <summary>What <see cref="RunInAsync"/> prints to stderr.</summary>
+    public List<string> RunInStderr { get; } = [];
+
+    public override Task<IReadOnlyList<string>> RunInAsync(string workingDirectory, params string[] args)
+    {
+        RunsIn.Add((args, workingDirectory));
+        OnRun?.Invoke(args);
+        return Task.FromResult<IReadOnlyList<string>>([.. RunInStderr]);
+    }
+
     public List<fuseraft.Web.Services.Relay.BridgeTag?> Tags { get; } = [];
     /// <summary>What <see cref="ReattachBridgesAsync"/> finds: processes "left running by a previous server".</summary>
     public List<(fuseraft.Web.Services.Relay.BridgeTag Tag, IBridgeProcess Process)> Running { get; } = [];

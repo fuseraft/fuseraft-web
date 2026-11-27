@@ -12,7 +12,7 @@ back to where it came from.
 | Shell | the command to run |
 | File write | the path, and a diff of the change |
 | Tool | the plugin and action, with its details |
-| Handoff | which agent hands off to which, and the keyword that triggered it |
+| Handoff | which agent hands off to which, and the route it took (a flow edge with `approve: true`) |
 
 **Approve** lets it go ahead; **Deny** refuses it, and the agent is told so.
 

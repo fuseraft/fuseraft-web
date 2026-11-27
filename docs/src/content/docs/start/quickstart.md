@@ -45,7 +45,7 @@ When the agent wants to write a file or run a command, the chat asks you first. 
 
 ## 5. Run a session
 
-Open **Orchestration Builder**, pick a team template and a workspace, and generate the config. Launch
+Open **Orchestration Builder**, pick a team template and a workspace, and generate the team file. Launch
 it, type the task for the team, and start the session. It opens on its own page, with each agent's
 turns and tool calls streaming in and its approvals waiting there and on the **HITL** page. See
 [Sessions](/fuseraft-web/guides/sessions/).

@@ -35,17 +35,19 @@ admins see the controls.
 - **Chats** connect every server that's on when they start. A server that's down makes the chat
   print a warning, and it carries on without that server's tools.
 - **Orchestrations**, run from Sessions or the Schedule, connect a server only when one of their
-  agents lists its name under `Plugins`:
+  agents lists its name under `tools`:
 
   ```yaml
-  Agents:
-    - Name: Analyst
-      Plugins:
-        - Sql
+  agents:
+    Analyst:
+      model: default
+      instructions: Answer questions from the sales database.
+      tools: [Sql]
   ```
 
   If the server can't be reached, the run logs a warning and the agent works without its tools. A
-  config that declares its own `McpServers` entry with the same name uses that entry instead.
+  team file that declares its own `mcpServers` entry with the same name uses that entry instead,
+  and so does a server of that name you saved with `/mcp add` in a chat.
 
 Chats and runs already going keep what they started with. A change applies to the next one.
 

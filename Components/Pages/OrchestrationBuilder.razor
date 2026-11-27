@@ -42,7 +42,7 @@
     }
     else
     {
-        <p class="muted" style="margin-bottom:20px">Pick a team template. <code>fuseraft init</code> generates the config from it.</p>
+        <p class="muted" style="margin-bottom:20px">Pick a team template. <code>fuseraft init</code> generates a team file from it.</p>
     }
 
     @if (_templates is null)
@@ -83,7 +83,7 @@
                 <div class="orch-section-label">Template</div>
                 <p><strong>@SelectedTemplate?.Label</strong></p>
                 <p class="muted">@SelectedTemplate?.Description</p>
-                <p class="form-hint">Generating writes the config and its agent files, and sets up <code>.fuseraft/</code> in the workspace. Edit the files afterwards to customise agents.</p>
+                <p class="form-hint">Generating writes a team file and sets up <code>.fuseraft/</code> in the workspace. Edit the team file afterwards to customise agents.</p>
             }
             else
             {
@@ -100,7 +100,7 @@
                     <p>@(_validation.Valid ? "✓ Valid" : "✗ Invalid")
                         @if (_validation.Config is { } c)
                         {
-                            <span class="muted small"> — @string.Join(" → ", c.Agents) (@c.SelectionType)</span>
+                            <span class="muted small"> — @string.Join(" → ", c.Agents) (@c.Flow)</span>
                         }
                     </p>
                     @if (_validation.Issues.Count > 0)

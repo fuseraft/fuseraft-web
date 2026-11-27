@@ -96,7 +96,7 @@ else
 
         <div class="form-group">
             <label class="form-label">API Endpoint</label>
-            <input class="input" @bind="_formEndpoint" placeholder="https://api.anthropic.com" />
+            <input class="input" @bind="_formEndpoint" @bind:event="oninput" placeholder="https://api.anthropic.com" />
         </div>
 
         <div class="form-group">
@@ -115,6 +115,7 @@ else
             <label class="form-label">
                 API Key
                 @if (_editId is not null) { <span class="form-label-muted">(leave blank to keep current)</span> }
+                else if (KeyOptional) { <span class="form-optional">(optional for a local server)</span> }
                 else { <span class="form-required">*</span> }
             </label>
             <div class="input-with-btn">
@@ -159,6 +160,7 @@ else
     private string _formModelId         = string.Empty;
     private string _formEndpoint        = string.Empty;
     private string _formApiKey          = string.Empty;
+    private bool   KeyOptional          => LocalEndpoint.KeyOptional(_formProvider, _formEndpoint);
     private string _formReasoningEffort = string.Empty;
 
     protected override async Task OnInitializedAsync()
@@ -221,9 +223,9 @@ else
 
         if (string.IsNullOrWhiteSpace(_formName))     { _formError = "Display name is required."; return; }
         if (string.IsNullOrWhiteSpace(_formModelId))  { _formError = "Model ID is required."; return; }
-        if (_editId is null && string.IsNullOrWhiteSpace(_formApiKey))
+        if (_editId is null && string.IsNullOrWhiteSpace(_formApiKey) && !KeyOptional)
         {
-            _formError = "API key is required for new profiles.";
+            _formError = "API key is required, unless the endpoint is on this machine or your local network.";
             return;
         }
 

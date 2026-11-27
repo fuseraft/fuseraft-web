@@ -94,6 +94,20 @@ public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptio
             throw new FuseraftCliException(FirstNonEmpty(stderr, stdout) ?? $"fuseraft {args.FirstOrDefault()} exited with code {exit}.");
     }
 
+    /// <summary>Like <see cref="RunAsync(string[])"/>, in <paramref name="workingDirectory"/>; returns the lines it printed to stderr.</summary>
+    public virtual async Task<IReadOnlyList<string>> RunInAsync(string workingDirectory, params string[] args)
+    {
+        var (exit, stdout, stderr) = await ExecAsync(args, workingDirectory);
+        if (exit != 0)
+            throw new FuseraftCliException(Unwrapped(stdout) ?? Unwrapped(stderr) ?? $"fuseraft {args.FirstOrDefault()} exited with code {exit}.");
+        return [.. stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+    }
+
+    /// <summary>A redirected fuseraft wraps its messages at 80 columns; this puts one back on a line, without its ✗.</summary>
+    internal static string? Unwrapped(string text) =>
+        string.Join(' ', text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .TrimStart('✗', ' ') is { Length: > 0 } line ? line : null;
+
     /// <summary>
     /// Starts a bridge process. A tagged one runs in a relay, so it keeps running if the server stops and
     /// <see cref="ReattachBridgesAsync"/> finds it again.

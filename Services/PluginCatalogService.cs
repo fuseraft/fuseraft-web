@@ -24,7 +24,7 @@ public sealed class PluginCatalogService(FuseraftCli cli)
         ["Document"]      = "Extract text and metadata from PDF, DOCX, PPTX, and XLSX files.",
         ["FileSystem"]    = "Read, write, list, copy, move, patch, and delete local files and directories.",
         ["Git"]           = "Common Git operations: status, diff, log, commit, branch, push, pull, stash.",
-        ["Handoff"]       = "Type-safe routing signal; terminates the tool loop and hands off to the next workflow step.",
+        ["Handoff"]       = "Picks one of the agent's routes in a steps flow; the route's gates run before the handoff takes effect.",
         ["Http"]          = "HTTP GET, POST, PUT, PATCH, DELETE, and HEAD requests to external URLs.",
         ["Json"]          = "Format, minify, query, merge, and validate JSON data.",
         ["Probe"]         = "Run code snippets, assert outputs with PASS/FAIL verdicts, and test hypotheses.",

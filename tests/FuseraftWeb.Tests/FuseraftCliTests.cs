@@ -60,4 +60,12 @@ public sealed class FuseraftCliTests
     {
         Assert.Throws<FuseraftCliException>(() => FuseraftCli.ParseList<WireSession>(Doc("[]")));
     }
+
+    [Fact]
+    public void Unwrapped_JoinsAWrappedMessage()
+    {
+        Assert.Equal("File '/w/bad.yaml' is missing the top-level 'Orchestration' key.",
+            FuseraftCli.Unwrapped("✗ File '/w/bad.yaml' is missing the \ntop-level 'Orchestration' key.\n"));
+        Assert.Null(FuseraftCli.Unwrapped(" \n"));
+    }
 }

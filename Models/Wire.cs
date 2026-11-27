@@ -121,6 +121,12 @@ public sealed record WireConfigSummary
     public List<string> Agents        { get; init; } = [];
     public string?      SelectionType { get; init; }
     public string?      Error         { get; init; }
+
+    /// <summary>How the flow runs, in team-file words: <c>steps</c>, or the pattern's name.</summary>
+    public string? Flow => SelectionType == "statemachine" ? "steps" : SelectionType;
+
+    /// <summary>The file is in a format fuseraft no longer loads, and <c>fuseraft migrate</c> converts it.</summary>
+    public bool NeedsMigration => Error?.Contains("fuseraft migrate", StringComparison.Ordinal) == true;
 }
 
 public sealed record WireValidation
@@ -129,6 +135,9 @@ public sealed record WireValidation
     public bool               Valid  { get; init; }
     public List<WireIssue>    Issues { get; init; } = [];
     public WireConfigSummary? Config { get; init; }
+
+    /// <summary>The file is in a format fuseraft no longer loads, and <c>fuseraft migrate</c> converts it.</summary>
+    public bool NeedsMigration => Issues.Any(i => i.Message.Contains("fuseraft migrate", StringComparison.Ordinal));
 }
 
 public sealed record WireIssue
