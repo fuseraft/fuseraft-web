@@ -51,7 +51,7 @@ else if (_configs is not null)
                         <th>File</th>
                         <th>Name</th>
                         <th>Agents</th>
-                        <th>Selection</th>
+                        <th>Flow</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -62,7 +62,11 @@ else if (_configs is not null)
                             @onclick="() => SelectConfig(cfg.Path)">
                             <td class="mono small">@cfg.Path</td>
                             <td>
-                                @if (cfg.Error is not null)
+                                @if (cfg.NeedsMigration)
+                                {
+                                    <span class="text-warning" title="@cfg.Error">old format</span>
+                                }
+                                else if (cfg.Error is not null)
                                 {
                                     <span class="text-danger" title="@cfg.Error">doesn't load</span>
                                 }
@@ -72,7 +76,7 @@ else if (_configs is not null)
                                 }
                             </td>
                             <td class="muted small">@(cfg.Error is null ? string.Join(", ", cfg.Agents) : "—")</td>
-                            <td class="muted">@cfg.SelectionType</td>
+                            <td class="muted">@cfg.Flow</td>
                             <td>
                                 <button class="btn btn-sm" @onclick:stopPropagation
                                         @onclick="() => ValidateConfigAsync(cfg.Path)">
@@ -85,6 +89,19 @@ else if (_configs is not null)
             </table>
         </div>
     }
+}
+
+@if (_migrated is not null)
+{
+    <div class="config-migrated">
+        <p class="text-success">✓ Converted <span class="mono small">@_migrated.Value.Path</span> to a team file.</p>
+        @if (_migrated.Value.Notes.Count > 0)
+        {
+            <ul class="muted small">
+                @foreach (var note in _migrated.Value.Notes) { <li>@note</li> }
+            </ul>
+        }
+    </div>
 }
 
 @if (_validating)
@@ -112,7 +129,26 @@ else if (_validation is not null)
                         <span class="agent-chip">@a</span>
                     }
                 </div>
-                <p class="muted small">Selection: <strong>@s.SelectionType</strong></p>
+                <p class="muted small">Flow: <strong>@s.Flow</strong></p>
+            </div>
+        }
+
+        @if (_validation.NeedsMigration)
+        {
+            <div class="config-migrate">
+                <p>This file is in a format fuseraft no longer runs. <code>fuseraft migrate</code> can convert it to a team file.</p>
+                @if (_confirmMigrate)
+                {
+                    <p class="muted small">This overwrites the file in place, and writes a markdown file for each agent that used <code>agentFile</code>. Comments inside the file aren't kept; the leading comment block is.</p>
+                    <button class="btn btn-sm btn-primary" @onclick="() => MigrateAsync(_validation.Path)" disabled="@_migrating">
+                        @(_migrating ? "Converting…" : "Convert")
+                    </button>
+                    <button class="btn btn-sm" @onclick="() => _confirmMigrate = false" disabled="@_migrating">Cancel</button>
+                }
+                else
+                {
+                    <button class="btn btn-sm btn-primary" @onclick="() => _confirmMigrate = true">Migrate…</button>
+                }
             </div>
         }
 
@@ -158,7 +194,10 @@ else if (_validation is not null)
     public void Dispose() => WorkspaceService.Changed -= OnWorkspaceChanged;
     private bool    _scanning   = false;
     private bool    _validating = false;
+    private bool    _migrating  = false;
+    private bool    _confirmMigrate = false;
     private string? _error;
+    private (string Path, IReadOnlyList<string> Notes)? _migrated;
 
     private List<WireConfigSummary>? _configs    = null;
     private WireConfigSummary?       _selected   = null;
@@ -217,6 +256,8 @@ else if (_validation is not null)
     {
         _validating = true;
         _error      = null;
+        _confirmMigrate = false;
+        if (_migrated?.Path != path) _migrated = null;
         StateHasChanged();
         try
         {
@@ -225,5 +266,21 @@ else if (_validation is not null)
         }
         catch (FuseraftCliException ex) { _validation = null; _error = ex.Message; }
         finally { _validating = false; StateHasChanged(); }
+    }
+
+    private async Task MigrateAsync(string path)
+    {
+        _migrating = true;
+        _error     = null;
+        StateHasChanged();
+        try
+        {
+            _migrated = (path, await ConfigService.MigrateAsync(path));
+            await ValidateConfigAsync(path);
+            if (_configs is not null && _validation?.Config is { } fresh)
+                _configs = [.. _configs.Select(c => c.Path == fresh.Path ? fresh : c)];
+        }
+        catch (Exception ex) when (ex is FuseraftCliException or UnauthorizedAccessException) { _error = ex.Message; }
+        finally { _migrating = false; _confirmMigrate = false; StateHasChanged(); }
     }
 }

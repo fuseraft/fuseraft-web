@@ -6,7 +6,8 @@ description: Model profiles, defaults, scheduled jobs, plugins, context, configs
 ## Model profiles
 
 A model profile stores a provider, a model ID, an endpoint, a reasoning effort and an API key once,
-for every chat and session to use.
+for every chat and session to use. The key is optional for a server on this machine or your local
+network, such as Ollama at `http://192.168.1.5:11434` or `http://gpu-box.lan:8000/v1`.
 
 API keys go in the OS keychain: GNOME Keyring via `secret-tool`, the macOS Keychain or the Windows
 Credential Manager. Without one, they go in a mode-600 file in your fuseraft home. A profile's key
@@ -53,7 +54,10 @@ a description. See the fuseraft [context store docs](/fuseraft-cli/context-store
 
 ## Configs
 
-Scan a directory for orchestration configs and validate them with `fuseraft validate`.
+Scan a directory for team files and validate them with `fuseraft validate`. A config in the old
+`Orchestration:` format, or a team whose agents use `agentFile:`, shows as **old format**: validate it
+and click **Migrate…** to convert it in place with `fuseraft migrate --write`. See the fuseraft
+[configuration docs](/fuseraft-cli/configuration/).
 
 ## Memory
 

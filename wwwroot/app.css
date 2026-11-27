@@ -1307,8 +1307,18 @@ code, pre, .mono { font-family: var(--mono); }
 /* ===== Colour helpers ===== */
 .text-success { color: var(--ok); }
 .text-danger  { color: var(--err); }
+.text-warning { color: var(--warn); }
 
 /* ===== Config validate panel ===== */
+.config-migrate {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--warn-dim);
+}
+.config-migrate p { margin-bottom: 8px; }
+.config-migrate .btn { margin-right: 6px; }
+.config-migrated { margin-bottom: 12px; }
+
 .config-validate-panel {
   background: var(--surface);
   border: 1px solid var(--border);
