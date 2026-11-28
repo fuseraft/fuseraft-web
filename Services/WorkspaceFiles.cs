@@ -102,7 +102,7 @@ public static class WorkspaceFiles
         string diff;
         if (status.StartsWith("??"))
             (_, diff, _) = await GitAsync(root, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-index", "--", "/dev/null",
-                Path.GetRelativePath(root, full));
+                Path.GetRelativePath(root, full).Replace('\\', '/'));
         else
         {
             var (headCode, _, _) = await GitAsync(root, "rev-parse", "--verify", "--quiet", "HEAD");
