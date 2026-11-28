@@ -426,4 +426,193 @@ public sealed class ReplServiceTests : IDisposable
         Assert.Equal(key, tag.Extra["key"]);
         Assert.Equal("p1", tag.Extra["profileId"]);
     }
+
+    private async Task<(ReplService Repl, WebUser Bob, string Key, FakeBridge Bridge)> ReadyChatAsync(object? ready = null)
+    {
+        var bob = _accounts.Add("bob", roots: ["/w"]);
+        await _profiles.For(bob).SaveAsync(new ModelProfile { Id = "p1", Name = "Grok", ModelId = "grok-4.7" }, "sk-bob");
+        var bridge = new FakeBridge().Send(ready ?? Ready());
+        _cli.Bridges.Enqueue(bridge);
+        var repl = new ReplService(_profiles, _cli, _broker);
+        var key  = await repl.CreateSessionAsync(bob, "p1", "", "/w");
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.SessionId == "r1", "the chat to be ready");
+        return (repl, bob, key, bridge);
+    }
+
+    private static object End(long input = 0) =>
+        new { type = "message_end", turnIndex = 1, toolCalls = Array.Empty<string>(), inputTokens = input, outputTokens = 7, cachedInputTokens = 0 };
+
+    [Fact]
+    public async Task Reply_KeepsItsTextAndToolCallsInOrder_WithResultsAndUsage()
+    {
+        var (repl, bob, key, bridge) = await ReadyChatAsync();
+        repl.SendMessage(bob, key, "read it");
+
+        bridge.Send(new { type = "token", text = "Let me " }).Send(new { type = "token", text = "look." })
+              .Send(new { type = "tool_call", id = "c1", name = "read_file", summary = "README.md", args = new { path = "README.md" } })
+              .Send(new { type = "tool_result", id = "c1", name = "read_file", ok = true, output = "# Demo" })
+              .Send(new { type = "token", text = "It's a demo." })
+              .Send(End(input: 1200));
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the reply to end");
+
+        var reply = repl.GetSession(bob, key)!.Messages[^1];
+        Assert.Equal("Let me look.It's a demo.", reply.Text);
+        Assert.Equal(["Let me look.", "read_file", "It's a demo."], reply.Parts.Select(p => p switch
+        {
+            ReplTextPart t => t.Text, ReplToolPart t => t.Name, _ => "?",
+        }));
+        var tool = reply.Parts.OfType<ReplToolPart>().Single();
+        Assert.True(tool.Ok);
+        Assert.Equal("# Demo", tool.Output);
+        Assert.NotNull(tool.Elapsed);
+        Assert.Contains("\"path\": \"README.md\"", tool.Args);
+        Assert.Equal(1200, reply.Usage!.Input);
+    }
+
+    [Fact]
+    public async Task Thinking_StreamsIntoOneReasoningPart_BeforeTheText()
+    {
+        var (repl, bob, key, bridge) = await ReadyChatAsync();
+        repl.SendMessage(bob, key, "why?");
+
+        bridge.Send(new { type = "thinking", text = "Weighing " }).Send(new { type = "thinking", text = "options." })
+              .Send(new { type = "token", text = "Because." }).Send(End());
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the reply to end");
+
+        var parts = repl.GetSession(bob, key)!.Messages[^1].Parts;
+        Assert.Equal("Weighing options.", Assert.IsType<ReplThinkingPart>(parts[0]).Text);
+        Assert.Equal("Because.", Assert.IsType<ReplTextPart>(parts[1]).Text);
+    }
+
+    [Fact]
+    public async Task FileChanges_AddUpPerFile_InTheReplyAndTheChat()
+    {
+        var (repl, bob, key, bridge) = await ReadyChatAsync();
+        repl.SendMessage(bob, key, "edit");
+
+        bridge.Send(new { type = "file_changed", path = "a.txt", sigil = "A", added = 2, removed = 0 })
+              .Send(new { type = "file_changed", path = "a.txt", sigil = "M", added = 1, removed = 1 })
+              .Send(new { type = "file_changes", changes = new[] { new { sigil = "A", path = "a.txt" }, new { sigil = "D", path = "old.txt" } } })
+              .Send(new { type = "token", text = "Done." })
+              .Send(End());
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the reply to end");
+
+        var chat = repl.GetSession(bob, key)!;
+        Assert.Equal([new ReplFileChange("a.txt", "A", 3, 1), new ReplFileChange("old.txt", "D", 0, 0)], chat.Messages[^1].Changes);
+        Assert.Equal(chat.Messages[^1].Changes, chat.ChangedFiles);
+    }
+
+    [Fact]
+    public async Task Ready_ListsTheCommands_AndStatusFillsTheStatusLine()
+    {
+        var ready = new
+        {
+            type = "ready", protocolVersion = 1, sessionId = "r1", model = "grok-4.7",
+            commands = new[] { new { usage = "/help", description = "Show this help" }, new { usage = "/model <id> [effort]", description = "Switch model" } },
+        };
+        var (repl, bob, key, bridge) = await ReadyChatAsync(ready);
+
+        bridge.Send(new { type = "status", model = "grok-5", turn = 3, context = 0.42, level = "near", modes = new[] { "hitl" }, input = 9000, output = 500, cached = 8000 });
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.StatusLine is not null, "the status line");
+
+        var chat = repl.GetSession(bob, key)!;
+        Assert.Equal(["/help", "/model <id> [effort]"], chat.Commands.Select(c => c.Usage));
+        var status = chat.StatusLine!;
+        Assert.Equal((0.42, "near", 9000L, 500L, 8000L), (status.Context, status.Level, status.Input, status.Output, status.Cached));
+        Assert.Equal(["hitl"], status.Modes);
+        Assert.Equal("grok-5", chat.ModelId);
+    }
+
+    [Fact]
+    public async Task Replay_ShowsTheResumedChatsEarlierTurns()
+    {
+        var (repl, bob, key, bridge) = await ReadyChatAsync();
+
+        bridge.Send(new
+        {
+            type = "replay", total = 5, compacted = false,
+            turns = new[] { new { user = "fix it", assistant = "Fixed.", toolCalls = new[] { new { name = "patch_file" } } } },
+        });
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Messages.Count == 3, "the replayed turn");
+
+        var messages = repl.GetSession(bob, key)!.Messages;
+        Assert.All(messages, m => Assert.True(m.Replayed));
+        Assert.Contains("last 1 of this chat's 5", messages[0].Text);
+        Assert.Equal(("fix it", "Fixed."), (messages[1].Text, messages[2].Text));
+        Assert.Equal(["patch_file"], messages[2].ToolCalls);
+    }
+
+    [Fact]
+    public async Task ShellCommand_ShowsItsRun_AndEndsWithoutAMessageEnd()
+    {
+        var (repl, bob, key, bridge) = await ReadyChatAsync();
+
+        repl.SendMessage(bob, key, "!git status");
+        bridge.Send(new { type = "shell_start", command = "git status" })
+              .Send(new { type = "shell_output", text = "clean" })
+              .Send(new { type = "shell_end" });
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the shell run to end");
+
+        var run = Assert.Single(repl.GetSession(bob, key)!.Messages);
+        Assert.Equal("shell", run.Role);
+        var part = Assert.IsType<ReplShellPart>(Assert.Single(run.Parts));
+        Assert.Equal(("clean\n", true), (part.Output, part.Done));
+    }
+
+    [Fact]
+    public async Task MessageSentMidReply_IsQueued_UntilTheReplyTakesItIn()
+    {
+        var (repl, bob, key, bridge) = await ReplyInProgressAsync();
+
+        repl.SendMessage(bob, key, "also check the tests");
+        var sent = repl.GetSession(bob, key)!.Messages[^1];
+        Assert.True(sent.Queued);
+
+        bridge.Send(new { type = "interjection", status = "joined", count = 1 });
+        await Wait.UntilAsync(() => !sent.Queued, "the message to be taken in");
+    }
+
+    [Fact]
+    public async Task Images_GoToTheProcess_AndTheirNamesStayInTheChat()
+    {
+        var (repl, bob, key, bridge) = await ReadyChatAsync();
+
+        repl.SendMessage(bob, key, "what's this?", [new ReplImage("shot.png", "data:image/png;base64,AAAA")]);
+
+        Assert.Equal(["shot.png"], repl.GetSession(bob, key)!.Messages[^1].Images);
+        var line = bridge.InputLines[^1];
+        Assert.Contains("\"images\":[{\"name\":\"shot.png\",\"data\":\"data:image/png;base64,AAAA\"}]", line);
+    }
+
+    [Fact]
+    public async Task Cancel_EndsToolCallsStillRunning()
+    {
+        var (repl, bob, key, bridge) = await ReadyChatAsync();
+        repl.SendMessage(bob, key, "run the tests");
+
+        bridge.Send(new { type = "tool_call", id = "c1", name = "shell_run", summary = "dotnet test" }).Send(new { type = "cancelled" });
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the cancel");
+
+        var tool = repl.GetSession(bob, key)!.Messages[^1].Parts.OfType<ReplToolPart>().Single();
+        Assert.False(tool.Ok);
+        Assert.Equal("(stopped)", tool.Output);
+    }
+
+    [Fact]
+    public async Task Export_WritesTheChatAsMarkdown()
+    {
+        var (repl, bob, key, bridge) = await ReadyChatAsync();
+        repl.SendMessage(bob, key, "read it");
+        bridge.Send(new { type = "tool_call", id = "c1", name = "read_file", summary = "README.md" })
+              .Send(new { type = "tool_result", id = "c1", name = "read_file", ok = true, output = "x" })
+              .Send(new { type = "token", text = "It's a demo." })
+              .Send(End());
+        await Wait.UntilAsync(() => repl.GetSession(bob, key)!.Status == ReplStatus.Idle, "the reply to end");
+
+        var md = repl.Export(bob, key)!;
+
+        Assert.Contains("## You\n\nread it", md);
+        Assert.Contains("- `read_file` README.md ✓", md);
+        Assert.Contains("It's a demo.", md);
+    }
 }

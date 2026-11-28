@@ -53,6 +53,13 @@ public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptio
         return ParseList<T>(doc);
     }
 
+    /// <summary>Like <see cref="ListAsync{T}(string[])"/>, with extra environment variables (such as an API key).</summary>
+    public async Task<List<T>> ListAsync<T>(IReadOnlyDictionary<string, string> environment, params string[] args)
+    {
+        using var doc = await QueryAsync(args, environment: environment);
+        return ParseList<T>(doc);
+    }
+
     public async Task<T> ItemAsync<T>(params string[] args)
     {
         using var doc = await QueryAsync(args);
@@ -146,9 +153,10 @@ public class FuseraftCli(IOptions<FuseraftCliOptions> options, IOptions<WebOptio
         }
     }
 
-    protected virtual async Task<JsonDocument> QueryAsync(string[] args, string? workingDirectory = null)
+    protected virtual async Task<JsonDocument> QueryAsync(string[] args, string? workingDirectory = null,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
-        var (exit, stdout, stderr) = await ExecAsync(args, workingDirectory);
+        var (exit, stdout, stderr) = await ExecAsync(args, workingDirectory, environment);
         var line = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault();
         if (line is null)
             throw new FuseraftCliException(FirstNonEmpty(stderr) ?? $"fuseraft {string.Join(' ', args)} printed nothing (exit {exit}).");

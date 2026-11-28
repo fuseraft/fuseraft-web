@@ -1,9 +1,13 @@
 @page "/chat"
 @implements IDisposable
+@using System.Text.Json
 @inject ReplService ReplService
 @inject ModelProfileService ProfileService
 @inject HitlBroker Broker
 @inject WorkspaceService WorkspaceService
+@inject WorkspaceAccess Access
+@inject ModelCatalogService Catalog
+@inject IJSRuntime JS
 
 <PageTitle>Chat — Fuseraft</PageTitle>
 
@@ -44,7 +48,23 @@
             </div>
             <div class="form-group">
                 <label class="form-label">Workspace</label>
-                <input class="input" @bind="_workspace" placeholder="/home/user/myproject" />
+                <div class="input-with-btn">
+                    <input class="input" @bind="_workspace" @bind:event="oninput" @bind:after="() => _missingWorkspace = null"
+                           placeholder="/home/user/myproject" />
+                    <button class="btn btn-sm" type="button" @onclick="() => _showPicker = !_showPicker">Browse…</button>
+                </div>
+                @if (_showPicker)
+                {
+                    <DirPicker InitialPath="@_workspace" OnSelect="OnDirSelected" OnClose="() => _showPicker = false" />
+                }
+                @if (_missingWorkspace is { } missing)
+                {
+                    <div class="callout callout-warn">
+                        <span><code>@missing</code> doesn't exist yet.</span>
+                        <button class="btn btn-sm btn-primary" @onclick="CreateWorkspaceAndStartAsync" disabled="@_starting">Create it and start</button>
+                        <button class="btn btn-sm" @onclick="() => _missingWorkspace = null">Cancel</button>
+                    </div>
+                }
                 <p class="form-hint">The chat's files and commands are confined to this directory, and it asks before writing or running anything.</p>
             </div>
             <div class="form-group">
@@ -110,49 +130,53 @@ else
     }
     else
     {
+        var transcript = session.Transcript();
+        var busy       = session.Status == ReplStatus.Thinking;
         <div class="repl-view">
             <div class="repl-session-bar">
                 <code class="repl-session-id">@session.SessionId</code>
-                <span class="muted small">@session.ModelId</span>
+                <button class="btn btn-sm btn-ghost repl-model-btn @(_panel == "model" ? "active" : "")"
+                        title="Switch this chat's model" @onclick='() => TogglePanel("model")'>@session.ModelId ▾</button>
                 @if (session.Cwd is { Length: > 0 } cwd)
                 {
                     <span class="muted small mono repl-session-cwd" title="@cwd">@(Path.GetFileName(cwd.TrimEnd('/', '\\')) is { Length: > 0 } dir ? dir : cwd)</span>
                 }
-                @if (session.Status == ReplStatus.Thinking)
+                @if (session.StatusLine is { } status)
                 {
-                    @if (session.StreamingTools is not null)
-                    {
-                        <span class="muted small">⚙ @session.StreamingTools</span>
-                    }
-                    else
-                    {
-                        <span class="muted small">thinking…</span>
-                    }
+                    <span class="repl-ctx repl-ctx-@status.Level" title="@ContextTitle(status)">@ContextLabel(status)</span>
                 }
-                <div style="margin-left:auto;display:flex;gap:6px">
+                @if (busy)
+                {
+                    <span class="muted small repl-busy">@(session.StreamingTools is { } running ? $"⚙ {LastTool(running)}" : "thinking…")</span>
+                }
+                <div class="repl-session-actions">
                     @if (session.Tools is { } chatTools)
                     {
-                        <button class="btn btn-sm @(_toolsOpen ? "active" : "")" aria-expanded="@(_toolsOpen ? "true" : "false")"
-                                title="Choose the tools this chat can use" @onclick="() => _toolsOpen = !_toolsOpen">
+                        <button class="btn btn-sm @(_panel == "tools" ? "active" : "")" aria-expanded="@(_panel == "tools" ? "true" : "false")"
+                                title="Choose the tools this chat can use" @onclick='() => TogglePanel("tools")'>
                             Tools <span class="muted">@ActiveCount(chatTools)/@chatTools.Categories.Sum(c => c.Tools?.Count ?? 0)</span>
                         </button>
                     }
-                    <button class="btn btn-sm" @onclick="Clear"
-                            disabled="@(session.Status == ReplStatus.Thinking)">
-                        Clear
-                    </button>
+                    @if (session.ChangedFiles.Count > 0)
+                    {
+                        <button class="btn btn-sm @(_panel == "changes" ? "active" : "")" title="Files this chat changed"
+                                @onclick='() => TogglePanel("changes")'>
+                            Changes <span class="muted">@session.ChangedFiles.Count</span>
+                        </button>
+                    }
+                    <button class="btn btn-sm" title="Download this chat as Markdown" @onclick="ExportAsync">Export</button>
+                    <button class="btn btn-sm" title="Start a new chat (this one stays in Recent Chats)" @onclick="Clear" disabled="@busy">Clear</button>
                     <button class="btn btn-sm" @onclick="CloseSession">Close</button>
                 </div>
             </div>
 
-            @if (_toolsOpen && session.Tools is { } menu)
+            @if (_panel == "tools" && session.Tools is { } menu)
             {
-                var busy = session.Status == ReplStatus.Thinking;
                 <section class="repl-tools" aria-label="Tools">
                     <div class="repl-tools-head">
                         <h2>Tools</h2>
                         <span class="muted small">@ActiveCount(menu) of @menu.Categories.Sum(c => c.Tools?.Count ?? 0) on in this chat</span>
-                        <button class="btn btn-sm" style="margin-left:auto" @onclick="() => _toolsOpen = false">Close</button>
+                        <button class="btn btn-sm" style="margin-left:auto" @onclick="() => _panel = null">Close</button>
                     </div>
                     @if (menu.SafeMode)
                     {
@@ -178,37 +202,201 @@ else
                 </section>
             }
 
+            @if (_panel == "model")
+            {
+                <section class="repl-tools" aria-label="Model">
+                    <div class="repl-tools-head">
+                        <h2>Model</h2>
+                        <span class="muted small">Switches this chat with <code>/model</code>; the profile's key and endpoint stay.</span>
+                        <button class="btn btn-sm" style="margin-left:auto" @onclick="() => _panel = null">Close</button>
+                    </div>
+                    <div class="input-with-btn">
+                        <input class="input" @bind="_modelQuery" @bind:event="oninput" placeholder="Filter, or type any model ID"
+                               aria-label="Model ID" @onkeydown="OnModelKeyDown" />
+                        <button class="btn btn-sm btn-primary" disabled="@(busy || string.IsNullOrWhiteSpace(_modelQuery))"
+                                @onclick="() => SwitchModel(_modelQuery)">Switch</button>
+                    </div>
+                    @if (_modelsError is not null)
+                    {
+                        <p class="form-hint form-hint-error">@_modelsError</p>
+                    }
+                    else if (_models is null)
+                    {
+                        <p class="form-hint">Asking the provider for its models…</p>
+                    }
+                    <div class="repl-model-list">
+                        @foreach (var m in (_models ?? []).Where(m => m.Contains(_modelQuery.Trim(), StringComparison.OrdinalIgnoreCase)).Take(200))
+                        {
+                            <button class="repl-model-item @(m == session.ModelId ? "current" : "")" disabled="@busy"
+                                    @onclick="() => SwitchModel(m)">@m</button>
+                        }
+                    </div>
+                </section>
+            }
+
+            @if (_panel == "changes")
+            {
+                <section class="repl-tools" aria-label="Changed files">
+                    <div class="repl-tools-head">
+                        <h2>Changes</h2>
+                        <span class="muted small">Files this chat changed. A diff shows everything not yet committed.</span>
+                        <button class="btn btn-sm" style="margin-left:auto" @onclick="() => _panel = null">Close</button>
+                    </div>
+                    <div class="repl-changes">
+                        @foreach (var change in session.ChangedFiles.AsEnumerable().Reverse().ToList())
+                        {
+                            <div class="repl-change-row">
+                                <button class="repl-change @(_diffAt is null && _diffPath == change.Path ? "active" : "")" @onclick="() => ShowDiffAsync(change.Path, null)">
+                                    <span class="repl-change-sigil sigil-@SigilClass(change.Sigil)">@change.Sigil</span>
+                                    <span class="mono">@change.Path</span>
+                                    @if (change.Added + change.Removed > 0)
+                                    {
+                                        <span class="repl-change-counts"><span class="added">+@change.Added</span> <span class="removed">−@change.Removed</span></span>
+                                    }
+                                </button>
+                                @if (_diffAt is null && _diffPath == change.Path)
+                                {
+                                    @if (_diff is not null) { <DiffView Diff="@_diff" /> }
+                                    else { <p class="form-hint">@(_diffReason ?? "Loading the diff…")</p> }
+                                }
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
+
             @if (session.Error is not null)
             {
                 <div class="error-banner">@session.Error</div>
             }
 
             <div class="repl-transcript">
-                @foreach (var msg in session.Messages.ToList())
+                @if (transcript.Length == 0 && !busy)
                 {
-                    <div class="repl-msg repl-msg-@msg.Role">
-                        @if (msg.Role != "system")
-                        {
-                            <div class="repl-msg-role">@(msg.Role == "user" ? "You" : "Assistant")</div>
-                        }
-                        @if (msg.Role == "assistant" || msg.Role == "system")
-                        {
-                            <Markdown Text="@msg.Text" />
-                        }
-                        else
-                        {
-                            <div class="repl-msg-text">@msg.Text</div>
-                        }
-                        @if (msg.ToolCalls.Count > 0)
-                        {
-                            <div class="repl-tool-chips">
-                                @foreach (var tool in msg.ToolCalls)
+                    <div class="repl-welcome">
+                        <p>
+                            @if (session.Cwd is { Length: > 0 } home)
+                            {
+                                <text>Ask about the code in <code title="@home">@(Path.GetFileName(home.TrimEnd('/', '\\')) is { Length: > 0 } folder ? folder : home)</code>, or have it make changes; it asks before writing files or running commands.</text>
+                            }
+                            else
+                            {
+                                <text>Ask anything. With no workspace, it can't read or change files.</text>
+                            }
+                        </p>
+                        <ul class="repl-welcome-tips">
+                            @if (session.Commands.Count > 0)
+                            {
+                                <li><kbd>/</kbd> opens the command menu, and <a href="" @onclick='() => SendNow("/help")' @onclick:preventDefault>/help</a> lists every command.</li>
+                            }
+                            else
+                            {
+                                <li><a href="" @onclick='() => SendNow("/help")' @onclick:preventDefault>/help</a> lists every slash command.</li>
+                            }
+                            @if (session.Cwd is not null)
+                            {
+                                <li><kbd>@@</kbd> points at a file or folder, which goes along with your message.</li>
+                            }
+                            <li><kbd>!</kbd> runs a shell command yourself, such as <code>!git status</code>.</li>
+                            <li>Attach or paste images for a model that can see them.</li>
+                        </ul>
+                        <div class="repl-starters">
+                            @foreach (var (label, prompt) in Starters(session))
+                            {
+                                <button class="btn btn-sm" @onclick="() => _input = prompt">@label</button>
+                            }
+                            @if (LastChatHere(session) is { } last)
+                            {
+                                <button class="btn btn-sm" title="Close this empty chat and resume that one"
+                                        @onclick="() => ContinueAsync(last.SessionId)">Continue “@Truncate(last.DisplayName, 40)”</button>
+                            }
+                        </div>
+                    </div>
+                }
+
+                @foreach (var msg in transcript)
+                {
+                    @switch (msg.Role)
+                    {
+                        case "shell":
+                            var run = msg.Parts.OfType<ReplShellPart>().FirstOrDefault();
+                            <div class="repl-shell">
+                                <div class="repl-shell-cmd">$ @msg.Text @if (run is { Done: false }) { <span class="muted small">running…</span> }</div>
+                                @if (run is { Output.Length: > 0 })
                                 {
-                                    <span class="tool-call-chip"><span class="tool-call-name">@tool</span></span>
+                                    <pre class="repl-shell-out">@run.Output</pre>
                                 }
                             </div>
-                        }
-                    </div>
+                            break;
+                        case "system":
+                            <div class="repl-msg repl-msg-system @(msg.Tone is { } tone ? $"repl-tone-{tone}" : "") @(msg.Replayed ? "repl-replayed" : "")">
+                                <Markdown Text="@msg.Text" />
+                            </div>
+                            break;
+                        default:
+                            <div class="repl-msg repl-msg-@msg.Role @(msg.Replayed ? "repl-replayed" : "")">
+                                <div class="repl-msg-role">
+                                    @(msg.Role == "user" ? "You" : "Assistant")
+                                    @if (msg.Queued) { <span class="repl-queued" title="Sent while a reply was running; it joins that reply or starts the next">queued</span> }
+                                </div>
+                                @if (msg.Role == "assistant")
+                                {
+                                    @if (msg.Parts.Count > 0)
+                                    {
+                                        <ReplParts Parts="msg.Parts" />
+                                    }
+                                    else
+                                    {
+                                        <Markdown Text="@msg.Text" />
+                                        @if (msg.ToolCalls.Count > 0)
+                                        {
+                                            <div class="repl-tool-chips">
+                                                @foreach (var tool in msg.ToolCalls)
+                                                {
+                                                    <span class="tool-call-chip"><span class="tool-call-name">@tool</span></span>
+                                                }
+                                            </div>
+                                        }
+                                    }
+                                    @if (msg.Changes.Count > 0)
+                                    {
+                                        <div class="repl-msg-changes">
+                                            @foreach (var change in msg.Changes)
+                                            {
+                                                <button class="repl-change-chip @(_diffAt == msg && _diffPath == change.Path ? "active" : "")"
+                                                        title="Show the diff" @onclick="() => ShowDiffAsync(change.Path, msg)">
+                                                    <span class="sigil-@SigilClass(change.Sigil)">@change.Sigil</span> @change.Path
+                                                    @if (change.Added + change.Removed > 0)
+                                                    {
+                                                        <span class="repl-change-counts"><span class="added">+@change.Added</span> <span class="removed">−@change.Removed</span></span>
+                                                    }
+                                                </button>
+                                            }
+                                        </div>
+                                        @if (_diffAt == msg && _diffPath is not null)
+                                        {
+                                            @if (_diff is not null) { <DiffView Diff="@_diff" /> }
+                                            else { <p class="form-hint">@(_diffReason ?? "Loading the diff…")</p> }
+                                        }
+                                    }
+                                    @if (msg.Usage is { } usage && UsageLabel(usage) is { Length: > 0 } usageText)
+                                    {
+                                        <div class="repl-msg-usage">@usageText</div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="repl-msg-text">@msg.Text</div>
+                                    @if (msg.Images.Count > 0)
+                                    {
+                                        <div class="repl-tool-chips">
+                                            @foreach (var image in msg.Images) { <span class="tool-call-chip">🖼 @image</span> }
+                                        </div>
+                                    }
+                                }
+                            </div>
+                            break;
+                    }
                 }
 
                 @foreach (var req in Broker.GetPending(Current.User, session.SessionId).Where(r => r.Source == ApprovalSource.Repl))
@@ -222,16 +410,17 @@ else
                                   OnAnswer="answer => ReplService.AnswerQuestion(Current.User, session.Key, answer)" />
                 }
 
-                @if (session.Status == ReplStatus.Thinking)
+                @if (busy && session.Shell is null)
                 {
+                    var live = session.LiveParts();
                     <div class="repl-msg repl-msg-assistant repl-streaming">
                         <div class="repl-msg-role">Assistant</div>
-                        @if (!string.IsNullOrEmpty(session.StreamingText))
+                        @if (live.Length > 0)
                         {
-                            <Markdown Text="@session.StreamingText" />
-                            <span class="repl-cursor">▋</span>
+                            <ReplParts Parts="live" />
+                            @if (live[^1] is ReplTextPart) { <span class="repl-cursor">▋</span> }
                         }
-                        else
+                        @if (live.Length == 0 || live[^1] is not ReplTextPart)
                         {
                             <div class="repl-thinking-dots">
                                 <span class="dot"></span><span class="dot"></span><span class="dot"></span>
@@ -243,25 +432,46 @@ else
 
             <div class="repl-dock">
                 <div class="repl-input-area">
+                    @if (_attachments.Count > 0 || _attachError is not null)
+                    {
+                        <div class="repl-attachments">
+                            @foreach (var image in _attachments)
+                            {
+                                <span class="repl-attachment" title="@image.Name">
+                                    <img src="@image.DataUrl" alt="" />
+                                    <span class="repl-attachment-name">@image.Name</span>
+                                    <button class="btn-icon" aria-label="Remove @image.Name" @onclick="() => _attachments.Remove(image)">✕</button>
+                                </span>
+                            }
+                            @if (_attachError is not null) { <span class="form-hint form-hint-error">@_attachError</span> }
+                        </div>
+                    }
                     @* @bind, not value= with @oninput: only @bind stops each re-render from writing the
                        server's older copy over what's still being typed. *@
-                    <textarea class="repl-textarea"
+                    <textarea class="repl-textarea" @ref="_textarea"
+                              data-commands="@CommandsJson(session)"
+                              data-mentions="@(session.Cwd is null ? "off" : "on")"
                               @bind="_input" @bind:event="oninput"
                               @onkeydown="OnKeyDown"
-                              placeholder="@(session.Status == ReplStatus.Thinking && session.InputWhileBusy
+                              placeholder="@(busy && session.InputWhileBusy
                                              ? "Add to the reply in progress…"
-                                             : "Message fuseraft…")"
-                              disabled="@(session.Status == ReplStatus.Thinking && !session.InputWhileBusy)"
+                                             : "Message fuseraft" + (session.Commands.Count > 0 ? " — / for commands" : "") + (session.Cwd is null ? "" : ", @ for files"))"
+                              disabled="@(busy && !session.InputWhileBusy)"
                               rows="3"></textarea>
                     <div class="repl-input-actions">
-                        @if (session.Status == ReplStatus.Thinking)
+                        <label class="btn btn-sm repl-attach-btn" title="Attach images (or paste them into the box)">
+                            Attach
+                            <InputFile id="repl-attach" OnChange="OnImagesChosen" multiple
+                                       accept="image/png,image/jpeg,image/gif,image/webp" />
+                        </label>
+                        @if (busy)
                         {
                             <button class="btn btn-danger" @onclick="Cancel">Stop</button>
                         }
-                        @if (session.Status != ReplStatus.Thinking || session.InputWhileBusy)
+                        @if (!busy || session.InputWhileBusy)
                         {
                             <button class="btn btn-primary" @onclick="Send"
-                                    disabled="@string.IsNullOrWhiteSpace(_input)">
+                                    disabled="@(string.IsNullOrWhiteSpace(_input) && _attachments.Count == 0)">
                                 Send
                             </button>
                         }
@@ -283,7 +493,23 @@ else
     private string  _selectedProfileId = "";
     private string  _systemPrompt    = "";
     private bool    _starting        = false;
-    private bool    _toolsOpen;
+    private string? _panel;
+    private string  _modelQuery = "";
+    private IReadOnlyList<string>? _models;
+    private string? _modelsError;
+    private string? _diffPath;
+    private ReplMessage? _diffAt;
+    private string? _diff;
+    private string? _diffReason;
+    private readonly List<ReplImage> _attachments = [];
+    private string? _attachError;
+    private ElementReference _textarea;
+    private string? _composerFor;
+    private int     _copiedSeq;
+    private DotNetObjectReference<Repl>? _self;
+    private (IReadOnlyList<ReplCommand> For, string Json) _commandsJson = ([], "[]");
+    private bool    _showPicker;
+    private string? _missingWorkspace;
     private string  _toolsQuery      = "";
 
     protected override async Task OnInitializedAsync()
@@ -335,16 +561,55 @@ else
         });
     }
 
+    private void OnDirSelected(string path)
+    {
+        _workspace        = path;
+        _showPicker       = false;
+        _missingWorkspace = null;
+    }
+
     private async Task StartSessionAsync()
     {
         if (string.IsNullOrWhiteSpace(_selectedProfileId)) return;
+        _pageError        = null;
+        _missingWorkspace = null;
+        var workspace = _workspace.Trim();
+        if (workspace.Length > 0 && !Directory.Exists(workspace))
+        {
+            if (!Path.IsPathFullyQualified(workspace))
+                _pageError = $"Use a full path for the workspace, such as {Access.DefaultDirectory}.";
+            else if (!Access.Allows(workspace))
+                _pageError = $"{workspace} is outside the folders you may work in.";
+            else
+                _missingWorkspace = Path.GetFullPath(workspace);
+            return;
+        }
+        await StartAsync();
+    }
+
+    private async Task CreateWorkspaceAndStartAsync()
+    {
+        if (_missingWorkspace is not { } path) return;
+        try
+        {
+            Directory.CreateDirectory(path);
+        }
+        catch (Exception ex)
+        {
+            _pageError = $"Couldn't create {path}: {ex.Message}";
+            return;
+        }
+        _workspace        = path;
+        _missingWorkspace = null;
+        await StartAsync();
+    }
+
+    private async Task StartAsync()
+    {
         _starting  = true;
-        _pageError = null;
         StateHasChanged();
         try
         {
-            if (!string.IsNullOrWhiteSpace(_workspace) && !Directory.Exists(_workspace.Trim()))
-                throw new DirectoryNotFoundException($"Workspace not found: {_workspace.Trim()}");
             WorkspaceService.Set(_workspace);
             _activeSessionId = await ReplService.CreateSessionAsync(Current.User, _selectedProfileId, _systemPrompt, _workspace);
         }
@@ -376,9 +641,189 @@ else
     private void Send()
     {
         var text = _input.Trim();
-        if (string.IsNullOrEmpty(text) || _activeSessionId is null) return;
+        if ((string.IsNullOrEmpty(text) && _attachments.Count == 0) || _activeSessionId is null) return;
         _input = "";
-        ReplService.SendMessage(Current.User, _activeSessionId, text);
+        var images = _attachments.ToList();
+        _attachments.Clear();
+        _attachError = null;
+        ReplService.SendMessage(Current.User, _activeSessionId, text, images);
+    }
+
+    private void SendNow(string text)
+    {
+        if (_activeSessionId is not null) ReplService.SendMessage(Current.User, _activeSessionId, text);
+    }
+
+    private async Task TogglePanel(string panel)
+    {
+        _panel = _panel == panel ? null : panel;
+        if (_panel == "model" && _models is null) await LoadModelsAsync();
+    }
+
+    private async Task LoadModelsAsync()
+    {
+        _modelsError = null;
+        var session  = ReplService.GetSession(Current.User, _activeSessionId!);
+        var profile  = _profiles.FirstOrDefault(p => p.Id == session?.ProfileId);
+        if (profile is null)
+        {
+            _models      = [];
+            _modelsError = "This chat's profile is gone, so its models can't be listed. Type a model ID instead.";
+            return;
+        }
+        try
+        {
+            _models = await Catalog.ListAsync(profile);
+        }
+        catch (FuseraftCliException ex)
+        {
+            _models      = [];
+            _modelsError = ex.Message;
+        }
+    }
+
+    private void SwitchModel(string model)
+    {
+        model = model.Trim();
+        if (model.Length == 0 || _activeSessionId is null) return;
+        _panel      = null;
+        _modelQuery = "";
+        ReplService.SendMessage(Current.User, _activeSessionId, $"/model {model}");
+    }
+
+    private void OnModelKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") SwitchModel(_modelQuery);
+    }
+
+    /// <summary>Shows <paramref name="path"/>'s diff under <paramref name="at"/>'s changes, or in the Changes panel when null; again hides it.</summary>
+    private async Task ShowDiffAsync(string path, ReplMessage? at)
+    {
+        if (_diffPath == path && _diffAt == at) { _diffPath = null; return; }
+        _diffPath   = path;
+        _diffAt     = at;
+        _diff       = null;
+        _diffReason = null;
+        var cwd = ReplService.GetSession(Current.User, _activeSessionId!)?.Cwd;
+        if (cwd is null) { _diffReason = "This chat has no workspace to compare in."; return; }
+        StateHasChanged();
+        var (diff, reason) = await WorkspaceFiles.DiffAsync(cwd, path);
+        if (_diffPath != path || _diffAt != at) return;
+        _diff       = diff;
+        _diffReason = reason;
+    }
+
+    private static string SigilClass(string sigil) => sigil switch { "A" => "added", "D" => "removed", _ => "changed" };
+
+    private static string LastTool(string running) => running.Split(" → ")[^1];
+
+    private static string ContextLabel(ReplStatusLine s) =>
+        $"{s.Context * 100:0}% context" + (s.Input + s.Output > 0 ? $" · {Tokens(s.Input + s.Output)} tokens" : "");
+
+    private static string ContextTitle(ReplStatusLine s) =>
+        $"Context window {s.Context * 100:0.#}% full" + (s.Level == "clear" ? "" : s.Level == "near" ? ", nearing auto-compaction" : ", compacting") +
+        $". This chat so far: {s.Input:N0} input tokens ({s.Cached:N0} cached), {s.Output:N0} output." +
+        (s.Modes.Count > 0 ? $" Modes: {string.Join(", ", s.Modes)}." : "");
+
+    private static string Tokens(long n) => n >= 1_000_000 ? $"{n / 1_000_000.0:0.#}M" : n >= 1_000 ? $"{n / 1_000.0:0.#}k" : n.ToString();
+
+    private static string UsageLabel(ReplUsage u)
+    {
+        if (u.Input is null && u.Output is null) return "";
+        var parts = new List<string>();
+        if (u.Input is { } i)  parts.Add($"{Tokens(i)} in" + (u.Cached is > 0 ? $" ({u.Cached * 100 / Math.Max(1, i):0}% cached)" : ""));
+        if (u.Output is { } o) parts.Add($"{Tokens(o)} out");
+        if (u.Elapsed is { } e) parts.Add(e.TotalSeconds < 60 ? $"{e.TotalSeconds:0.0} s" : $"{(int)e.TotalMinutes} min {e.Seconds} s");
+        return string.Join(" · ", parts);
+    }
+
+    private static IEnumerable<(string Label, string Prompt)> Starters(ActiveReplSession s)
+    {
+        if (s.Cwd is null)
+        {
+            yield return ("Explain a concept", "Explain ");
+            yield break;
+        }
+        yield return ("Explain this project", "Give me a tour of this project: what it does, how it's organized, and where to start reading.");
+        if (Directory.Exists(Path.Combine(s.Cwd, ".git")))
+            yield return ("Review my changes", "Review my uncommitted changes. Point out bugs, risks and anything unfinished.");
+        yield return ("Find a bug to fix", "Look for a real bug in this code, explain it, and propose a fix before changing anything.");
+        yield return ("Write tests", "Find the most important untested code here and suggest tests for it.");
+    }
+
+    private WireReplSession? LastChatHere(ActiveReplSession s) =>
+        _snapshots.FirstOrDefault(snap => snap.SessionId != s.SessionId && snap.TurnIndex > 0
+            && string.Equals(snap.Cwd.TrimEnd('/'), (s.Cwd ?? "").TrimEnd('/'), StringComparison.Ordinal));
+
+    private async Task ContinueAsync(string sessionId)
+    {
+        CloseSession();
+        await ResumeSnapshotAsync(sessionId);
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_activeSessionId is null || ReplService.Export(Current.User, _activeSessionId) is not { } markdown) return;
+        var id = ReplService.GetSession(Current.User, _activeSessionId)?.SessionId ?? "chat";
+        await JS.InvokeVoidAsync("fuseraftChat.download", $"fuseraft-chat-{id}.md", markdown);
+    }
+
+    private const int  MaxImages     = 4;
+    private const long MaxImageBytes = 5 * 1024 * 1024;
+
+    private async Task OnImagesChosen(InputFileChangeEventArgs e)
+    {
+        _attachError = null;
+        foreach (var file in e.GetMultipleFiles(20))
+        {
+            if (_attachments.Count >= MaxImages) { _attachError = $"Up to {MaxImages} images per message."; break; }
+            if (!file.ContentType.StartsWith("image/")) { _attachError = $"{file.Name} isn't an image."; continue; }
+            if (file.Size > MaxImageBytes) { _attachError = $"{file.Name} is over 5 MB."; continue; }
+            try
+            {
+                using var stream = file.OpenReadStream(MaxImageBytes);
+                using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+                var name = string.IsNullOrWhiteSpace(file.Name) || file.Name == "image.png" ? $"pasted-{_attachments.Count + 1}.png" : file.Name;
+                _attachments.Add(new ReplImage(name, $"data:{file.ContentType};base64,{Convert.ToBase64String(buffer.ToArray())}"));
+            }
+            catch (Exception ex)
+            {
+                _attachError = $"Couldn't read {file.Name}: {ex.Message}";
+            }
+        }
+    }
+
+    private string CommandsJson(ActiveReplSession s)
+    {
+        if (!ReferenceEquals(_commandsJson.For, s.Commands))
+            _commandsJson = (s.Commands, JsonSerializer.Serialize(s.Commands.Select(c => new { u = c.Usage, d = c.Description })));
+        return _commandsJson.Json;
+    }
+
+    /// <summary>Files and folders in the chat's workspace for an <c>@</c> mention, from the composer's menu.</summary>
+    [JSInvokable]
+    public IReadOnlyList<string> SuggestFiles(string query) =>
+        _activeSessionId is not null && ReplService.GetSession(Current.User, _activeSessionId)?.Cwd is { } cwd
+            ? WorkspaceFiles.Suggest(cwd, query)
+            : [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!RendererInfo.IsInteractive || _activeSessionId is null) { _composerFor = null; return; }
+        if (ReplService.GetSession(Current.User, _activeSessionId) is not { } session) return;
+        if (_composerFor != session.Key)
+        {
+            _composerFor = session.Key;
+            _self ??= DotNetObjectReference.Create(this);
+            try { await JS.InvokeVoidAsync("fuseraftChat.attach", _textarea, _self); } catch (JSException) { }
+        }
+        if (session.CopySeq != _copiedSeq)
+        {
+            _copiedSeq = session.CopySeq;
+            if (session.CopyText is { } text)
+                try { await JS.InvokeVoidAsync("fuseraftChat.copy", text); } catch (JSException) { }
+        }
     }
 
     private void ToggleTool(ToolSwitches.Toggle t) =>
@@ -402,6 +847,10 @@ else
     {
         var id = _activeSessionId;
         _activeSessionId = null;
+        _panel           = null;
+        _models          = null;
+        _diffPath        = null;
+        _attachments.Clear();
         if (id is not null)
             ReplService.CloseSession(Current.User, id);
     }
@@ -418,6 +867,7 @@ else
 
     public void Dispose()
     {
+        _self?.Dispose();
         ReplService.SessionChanged -= OnSessionChanged;
         Broker.PendingChanged      -= OnPendingChanged;
     }

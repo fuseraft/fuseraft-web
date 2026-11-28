@@ -175,6 +175,13 @@ public sealed record WireFunction
     public string Description { get; init; } = "";
 }
 
+/// <summary>A model from <c>fuseraft models --json</c>.</summary>
+public sealed record WireModel
+{
+    public string Id      { get; init; } = "";
+    public bool   Current { get; init; }
+}
+
 /// <summary>A global setting from <c>fuseraft settings show --json</c>; <c>Value</c> is null when unset, which takes <c>Default</c>.</summary>
 public sealed record WireSetting
 {

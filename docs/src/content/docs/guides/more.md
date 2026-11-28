@@ -9,6 +9,10 @@ A model profile stores a provider, a model ID, an endpoint, a reasoning effort a
 for every chat and session to use. The key is optional for a server on this machine or your local
 network, such as Ollama at `http://192.168.1.5:11434` or `http://gpu-box.lan:8000/v1`.
 
+Leave **API Endpoint** blank to use the provider's public endpoint. With fuseraft v1.34.0 or later,
+**List models** asks the provider which models the profile's key can use, so you can pick the model
+ID instead of typing it. On an existing profile it uses the saved key unless you've typed a new one.
+
 API keys go in the OS keychain: GNOME Keyring via `secret-tool`, the macOS Keychain or the Windows
 Credential Manager. Without one, they go in a mode-600 file in your fuseraft home. A profile's key
 reaches only the processes you start:

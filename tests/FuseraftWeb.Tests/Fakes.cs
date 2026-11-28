@@ -17,6 +17,7 @@ internal sealed class FakeCli() : FuseraftCli(Options.Create(new FuseraftCliOpti
     public List<(string[] Args, string? Cwd)> Started { get; } = [];
 
     public List<(string[] Args, string? Cwd)> Queries { get; } = [];
+    public List<IReadOnlyDictionary<string, string>?> QueryEnvironments { get; } = [];
     public List<IReadOnlyDictionary<string, string>?> Environments { get; } = [];
     /// <summary>Every home a caller asked for; the fake answers for all of them.</summary>
     public List<string> Homes { get; } = [];
@@ -32,9 +33,11 @@ internal sealed class FakeCli() : FuseraftCli(Options.Create(new FuseraftCliOpti
         return this;
     }
 
-    protected override Task<JsonDocument> QueryAsync(string[] args, string? workingDirectory = null)
+    protected override Task<JsonDocument> QueryAsync(string[] args, string? workingDirectory = null,
+        IReadOnlyDictionary<string, string>? environment = null)
     {
         Queries.Add((args, workingDirectory));
+        QueryEnvironments.Add(environment);
         return Responses.TryGetValue(string.Join(' ', args), out var json)
             ? Task.FromResult(JsonDocument.Parse(json))
             : throw new FuseraftCliException($"no canned response for '{string.Join(' ', args)}'");
