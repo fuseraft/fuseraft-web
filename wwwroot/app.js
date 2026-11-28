@@ -315,3 +315,27 @@ window.fuseraftChat = (() => {
 
   return { attach, copy, download };
 })();
+
+// Config editor: Tab indents with two spaces (Esc first lets Tab move focus on), and Ctrl/Cmd+S saves.
+window.fuseraftEditor = {
+  attach(ta, dotnet) {
+    let release = false;
+    const onKey = e => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        dotnet.invokeMethodAsync('SaveFromKeyboard');
+        return;
+      }
+      if (e.key === 'Escape') { release = true; return; }
+      if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !release) {
+        e.preventDefault();
+        ta.setRangeText('  ', ta.selectionStart, ta.selectionEnd, 'end');
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        return;
+      }
+      release = false;
+    };
+    ta.addEventListener('keydown', onKey);
+    return { dispose: () => ta.removeEventListener('keydown', onKey) };
+  },
+};

@@ -2296,3 +2296,33 @@ kbd {
 }
 .md pre:hover .code-copy, .code-copy:focus { opacity: 1; }
 .repl-change-chip.active { border-color: var(--accent); }
+
+/* ===== Config editor ===== */
+.config-editor { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.config-editor-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); }
+.config-tab {
+  padding: 6px 10px; margin-bottom: -1px; border: 1px solid transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: none; color: var(--muted); font-family: var(--mono); font-size: 12px; cursor: pointer;
+}
+.config-tab:hover { color: var(--text); }
+.config-tab.active { color: var(--text); background: var(--surface); border-color: var(--border); border-bottom-color: var(--surface); }
+.config-tab-dirty { color: var(--accent); }
+.config-editor-path { overflow-wrap: anywhere; color: var(--muted); margin: 0; }
+.config-editor-text { min-height: 420px; resize: vertical; white-space: pre; overflow: auto; tab-size: 2; }
+.config-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.config-editor-hint { margin-left: auto; }
+.config-editor-validation p { margin: 4px 0; }
+@media (max-width: 760px) {
+  .config-editor-text { min-height: 300px; font-size: 16px; } /* iOS zooms into smaller text fields */
+  .config-editor-hint { display: none; }
+}
+.config-row-actions { display: flex; gap: 6px; justify-content: flex-end; white-space: nowrap; }
+@media (max-width: 760px) {
+  /* Each config becomes a stacked row, so its buttons stay on screen. */
+  .config-table thead { display: none; }
+  .config-table, .config-table tbody, .config-table tr, .config-table td { display: block; }
+  .config-table tr { padding: 10px 12px; border-bottom: 1px solid var(--border2); }
+  .config-table td { padding: 2px 0; border: 0; overflow-wrap: anywhere; }
+  .config-table td:empty { display: none; }
+  .config-table td.config-row-actions { justify-content: flex-start; padding-top: 8px; }
+}

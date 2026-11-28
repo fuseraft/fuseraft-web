@@ -43,7 +43,9 @@ launches it:
 1. Pick a template. Orchestrations you've run before are listed at the top.
 2. Pick a workspace and an output path for the team file, and optionally a model (your
    [model profiles](/fuseraft-web/guides/more/#model-profiles) are suggested) and an endpoint.
-3. **Generate** writes the team file and shows it with its validation result.
+3. **Generate** writes the team file and opens it in the
+   [config editor](/fuseraft-web/guides/more/#configs) with its validation result, so you can change
+   the team and its agents' instructions before running it.
 4. **Start Session** opens the New Session dialog with the workspace and config filled in. Add the
    task and start it.
 

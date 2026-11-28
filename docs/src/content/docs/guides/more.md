@@ -63,6 +63,20 @@ Scan a directory for team files and validate them with `fuseraft validate`. A co
 and click **Migrate…** to convert it in place with `fuseraft migrate --write`. See the fuseraft
 [configuration docs](/fuseraft-cli/configuration/).
 
+**Edit** opens a team file in an editor, with a tab for each markdown agent file it names. A file the
+team names that doesn't exist yet opens empty, and saving creates it.
+
+- **Save** writes the file, then validates the team and shows any issues. A file that doesn't load is
+  still saved, so you can fix it in the next save.
+- **Revert** throws away the changes you haven't saved. Leaving the page with unsaved changes asks
+  first.
+- If a file changed on disk after you opened it, Save stops and offers to load the disk version or
+  overwrite it.
+- Tab indents with two spaces; press Esc first to move focus on instead. Ctrl+S (⌘S) saves.
+
+Only `.yaml`, `.yml`, `.json` and `.md` files open here. A non-admin can only edit files inside their
+workspaces. Agent file tabs need fuseraft 1.35.0 or later; with an older CLI, only the team file opens.
+
 ## Memory
 
 Browse and delete the memories your chats and agents keep. See the fuseraft
