@@ -1,0 +1,26 @@
+# docker compose up -d, then: docker compose logs fuseraft-web | grep setup
+# See https://fuseraft.ai/fuseraft-web/deploy/container/
+
+services:
+  fuseraft-web:
+    image: ghcr.io/fuseraft/fuseraft-web:latest
+    # Only this machine can reach it until a TLS reverse proxy is in front.
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      # Accounts, keys, fuseraft homes, chats and default workspaces.
+      - fuseraft-data:/data
+      # Repositories for agents to work in, writable by the container's user (UID 1654).
+      # - /srv/repos:/workspace
+    # To run as the repositories' owner instead, set user: and bind-mount /data from a
+    # directory that user owns (a new named volume belongs to UID 1654):
+    # user: "1000:1000"
+    # environment:
+    #   ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"   # behind a reverse proxy only
+    #   Fuseraft__PublicUrl: https://fuseraft.example.com
+    # env_file: fuseraft-web.env                       # secrets, mode 600
+    # A restart ends running chats and sessions; resume them from the UI.
+    restart: unless-stopped
+
+volumes:
+  fuseraft-data:

@@ -36,7 +36,7 @@ roots on the Users page.
 Accounts separate people who trust each other, not strangers. Every agent runs as the server's OS
 user, so an agent's shell or file tools can reach whatever that user can, including other accounts'
 homes. Workspace roots bound what the UI lets someone pick, not what an agent can do once it runs.
-For untrusted users, run one fuseraft-web per OS user or container.
+For untrusted users, run one fuseraft-web per OS user or [container](/fuseraft-web/deploy/container/).
 :::
 
 ## Managing accounts

@@ -65,6 +65,60 @@ jobs:
             artifacts/*.zip
           retention-days: 30
 
+  image:
+    name: Container image
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      PUSH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # the image build runs MinVer on this checkout
+
+      - name: Latest fuseraft CLI
+        id: cli
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "version=$(gh release view --repo fuseraft/fuseraft-cli --json tagName -q .tagName | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v4
+        if: env.PUSH == 'true'
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        if: env.PUSH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            ai.fuseraft.cli.version=${{ steps.cli.outputs.version }}
+
+      # Pull requests and main build for amd64 only, to catch a broken Dockerfile; tags push both.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ env.PUSH == 'true' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: ${{ env.PUSH == 'true' }}
+          build-args: FUSERAFT_CLI_VERSION=${{ steps.cli.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   release:
     name: GitHub Release
     needs: pack

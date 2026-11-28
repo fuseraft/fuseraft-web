@@ -31,6 +31,10 @@ On Windows, unzip the archive and run `fuseraft-web.exe`.
 `appsettings.json` sits next to the binary. See [Configuration](/fuseraft-web/reference/config/) for
 what goes in it.
 
+## A container image
+
+`ghcr.io/fuseraft/fuseraft-web` bundles the CLI. See [Run it in a container](/fuseraft-web/deploy/container/).
+
 ## Linux keychain
 
 On Linux, install `secret-tool` (from `libsecret-tools`) so API keys go in the keychain. Without it,
