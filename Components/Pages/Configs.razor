@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject ConfigService ConfigService
 @inject WorkspaceService WorkspaceService
+@inject IJSRuntime JS
 
 <PageTitle>Configs — Fuseraft</PageTitle>
 
@@ -45,7 +46,7 @@ else if (_configs is not null)
     else
     {
         <div class="table-wrapper" style="margin-bottom:1.5rem">
-            <table class="data-table">
+            <table class="data-table config-table">
                 <thead>
                     <tr>
                         <th>File</th>
@@ -77,7 +78,11 @@ else if (_configs is not null)
                             </td>
                             <td class="muted small">@(cfg.Error is null ? string.Join(", ", cfg.Agents) : "—")</td>
                             <td class="muted">@cfg.Flow</td>
-                            <td>
+                            <td class="config-row-actions">
+                                <button class="btn btn-sm" @onclick:stopPropagation
+                                        @onclick="() => EditAsync(cfg)">
+                                    Edit
+                                </button>
                                 <button class="btn btn-sm" @onclick:stopPropagation
                                         @onclick="() => ValidateConfigAsync(cfg.Path)">
                                     Validate
@@ -89,6 +94,16 @@ else if (_configs is not null)
             </table>
         </div>
     }
+}
+
+@if (_editing is not null)
+{
+    <div class="config-validate-panel">
+        <div class="config-validate-header">
+            <h2>Edit @(_editing.Name ?? Path.GetFileName(_editing.Path))</h2>
+        </div>
+        <ConfigEditor @ref="_editor" TeamFile="@_editing.Path" AgentFiles="@_editing.AgentFiles" OnSaved="OnEditorSaved" OnClose="() => _editing = null" />
+    </div>
 }
 
 @if (_migrated is not null)
@@ -175,10 +190,57 @@ else if (_validation is not null)
     private string  _path       = string.Empty;
     private bool    _showPicker = false;
 
+    /// <summary>A team file to open in the editor, as the builder links it.</summary>
+    [SupplyParameterFromQuery(Name = "edit")] public string? EditPath { get; set; }
+
+    private WireConfigSummary? _editing;
+    private ConfigEditor? _editor;
+
     protected override void OnInitialized()
     {
         _path = PreferFuseraftConfigDir(WorkspaceService.Current);
         if (RendererInfo.IsInteractive) WorkspaceService.Changed += OnWorkspaceChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!RendererInfo.IsInteractive || string.IsNullOrWhiteSpace(EditPath)) return;
+        _path = Path.GetDirectoryName(EditPath) ?? _path;
+        await SearchAsync();
+        var target = Path.GetFullPath(EditPath);
+        if (_configs?.FirstOrDefault(c => c.Path == target) is { } cfg) Edit(cfg);
+        else if (_error is null) _error = $"{EditPath} isn't a config file in {_path}.";
+    }
+
+    private async Task EditAsync(WireConfigSummary cfg)
+    {
+        if (_editing?.Path != cfg.Path && _editor?.HasUnsavedChanges == true
+            && !await JS.InvokeAsync<bool>("confirm", $"Discard your unsaved changes to {_editing?.Name ?? "this team"}?"))
+            return;
+        Edit(cfg);
+    }
+
+    private void Edit(WireConfigSummary cfg)
+    {
+        _editing = cfg;
+        _selected = cfg;
+        _validation = null;
+    }
+
+    /// <summary>A validation's summary row, also for a team that doesn't load, with the agent files it names.</summary>
+    private static WireConfigSummary Summary(WireValidation v) =>
+        (v.Config ?? new WireConfigSummary
+        {
+            Path  = v.Path,
+            Error = v.Issues.FirstOrDefault(i => i.Level == "error")?.Message ?? "Doesn't load.",
+        }) with { AgentFiles = v.AgentFiles.Count > 0 ? v.AgentFiles : v.Config?.AgentFiles ?? [] };
+
+    private void OnEditorSaved(WireValidation? result)
+    {
+        if (result is null || _editing is null) return;
+        var fresh = Summary(result);
+        _editing = fresh;
+        if (_configs is not null) _configs = [.. _configs.Select(c => c.Path == fresh.Path ? fresh : c)];
     }
 
     private void OnWorkspaceChanged() =>
@@ -230,7 +292,7 @@ else if (_validation is not null)
             if (File.Exists(trimmed))
             {
                 await ValidateConfigAsync(trimmed);
-                _configs = [_validation?.Config ?? new WireConfigSummary { Path = Path.GetFullPath(trimmed), Error = "Doesn't load." }];
+                _configs = [_validation is null ? new WireConfigSummary { Path = Path.GetFullPath(trimmed), Error = "Doesn't load." } : Summary(_validation)];
                 _selected = _configs[0];
             }
             else

@@ -124,6 +124,7 @@ builder.Services.AddScoped(sp => new ContextService(UserCli(sp), sp.GetRequiredS
 builder.Services.AddScoped(sp => new MemoryService(UserCli(sp)));
 builder.Services.AddScoped(sp => new SettingsService(UserCli(sp)));
 builder.Services.AddScoped(sp => new ScheduleService(UserCli(sp), sp.GetRequiredService<WorkspaceAccess>()));
+builder.Services.AddScoped<ConfigFiles>();
 builder.Services.AddScoped(sp => new ConfigService(UserCli(sp), sp.GetRequiredService<WorkspaceAccess>()));
 builder.Services.AddScoped(sp => new OrchestrationTemplateService(UserCli(sp), sp.GetRequiredService<WorkspaceAccess>()));
 builder.Services.AddScoped(sp => sp.GetRequiredService<ModelProfileRegistry>().For(sp.GetRequiredService<CurrentUser>().User));

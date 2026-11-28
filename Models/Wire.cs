@@ -122,6 +122,9 @@ public sealed record WireConfigSummary
     public string?      SelectionType { get; init; }
     public string?      Error         { get; init; }
 
+    /// <summary>The markdown agent files the team names, as full paths; empty before CLI 1.35.0.</summary>
+    public List<string> AgentFiles    { get; init; } = [];
+
     /// <summary>How the flow runs, in team-file words: <c>steps</c>, or the pattern's name.</summary>
     public string? Flow => SelectionType == "statemachine" ? "steps" : SelectionType;
 
@@ -135,6 +138,9 @@ public sealed record WireValidation
     public bool               Valid  { get; init; }
     public List<WireIssue>    Issues { get; init; } = [];
     public WireConfigSummary? Config { get; init; }
+
+    /// <summary>The team's markdown agent files, even when it doesn't load; empty before CLI 1.35.0.</summary>
+    public List<string>       AgentFiles { get; init; } = [];
 
     /// <summary>The file is in a format fuseraft no longer loads, and <c>fuseraft migrate</c> converts it.</summary>
     public bool NeedsMigration => Issues.Any(i => i.Message.Contains("fuseraft migrate", StringComparison.Ordinal));

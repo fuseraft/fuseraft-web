@@ -77,24 +77,18 @@
             {
                 <div class="orch-section-label">Config</div>
                 <p class="mono small" style="word-break:break-all;">@_selectedRecent</p>
+                <a class="btn btn-sm" href="@($"/configs?edit={Uri.EscapeDataString(_selectedRecent)}")">Edit</a>
             }
             else if (_generated is null)
             {
                 <div class="orch-section-label">Template</div>
                 <p><strong>@SelectedTemplate?.Label</strong></p>
                 <p class="muted">@SelectedTemplate?.Description</p>
-                <p class="form-hint">Generating writes a team file and sets up <code>.fuseraft/</code> in the workspace. Edit the team file afterwards to customise agents.</p>
+                <p class="form-hint">Generating writes a team file and sets up <code>.fuseraft/</code> in the workspace. You can then edit the team file and its agents here.</p>
             }
             else
             {
                 <div class="orch-section-label">Generated</div>
-                <p class="mono small" style="word-break:break-all;">@_generated.ConfigPath</p>
-                @if (_generated.AgentFiles.Count > 0)
-                {
-                    <ul class="muted small">
-                        @foreach (var f in _generated.AgentFiles) { <li class="mono">@f</li> }
-                    </ul>
-                }
                 @if (_validation is not null)
                 {
                     <p>@(_validation.Valid ? "✓ Valid" : "✗ Invalid")
@@ -116,7 +110,8 @@
                         </ul>
                     }
                 }
-                <textarea class="orch-yaml-editor" readonly>@_generatedYaml</textarea>
+                <ConfigEditor TeamFile="@_generated.ConfigPath" AgentFiles="@(_validation?.AgentFiles is { Count: > 0 } named ? named : _generated.AgentFiles)" ShowValidation="false"
+                              OnSaved="v => _validation = v ?? _validation" />
             }
         </div>
 
@@ -201,7 +196,6 @@
 
     private WireInitResult? _generated;
     private WireValidation? _validation;
-    private string          _generatedYaml = string.Empty;
 
     private WireTemplate? SelectedTemplate => _templates?.FirstOrDefault(t => t.Key == _selectedKey);
 
@@ -258,7 +252,6 @@
             var ws = _workspace.Trim();
             WorkspaceService.Set(ws);
             _generated     = await TemplateService.GenerateAsync(ws, _selectedKey, _configRelPath.Trim(), _model.Trim(), _endpoint.Trim(), _force);
-            _generatedYaml = await File.ReadAllTextAsync(_generated.ConfigPath);
             _validation    = await ConfigService.ValidateAsync(_generated.ConfigPath);
         }
         catch (FuseraftCliException ex) { _error = ex.Message; }

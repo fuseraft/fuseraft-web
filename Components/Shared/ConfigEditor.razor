@@ -1,0 +1,261 @@
+@using fuseraft.Web.Services.Cli
+@implements IAsyncDisposable
+@inject ConfigFiles Files
+@inject ConfigService Configs
+@inject IJSRuntime JS
+
+<NavigationLock ConfirmExternalNavigation="@AnyDirty" OnBeforeInternalNavigation="ConfirmLeaveAsync" />
+
+<div class="config-editor">
+    <div class="config-editor-tabs" role="tablist">
+        @foreach (var f in _files)
+        {
+            <button role="tab" aria-selected="@(f == _current ? "true" : "false")"
+                    class="config-tab @(f == _current ? "active" : "")" title="@f.Path"
+                    @onclick="() => _current = f">
+                @Path.GetFileName(f.Path)@if (f.Dirty) {<span class="config-tab-dirty" aria-label="unsaved"> •</span>}
+            </button>
+        }
+    </div>
+
+    @if (_current is { } cur)
+    {
+        <p class="config-editor-path mono small">
+            @cur.Path
+            @if (cur.Loaded && cur.Stamp is null) { <span class="muted"> — doesn't exist yet; saving creates it</span> }
+        </p>
+
+        @if (cur.Conflict)
+        {
+            <div class="callout callout-warn">
+                <span>@Path.GetFileName(cur.Path) changed on disk since you opened it.</span>
+                <button class="btn btn-sm" @onclick="() => ReloadAsync(cur)">Load the disk version</button>
+                <button class="btn btn-sm" @onclick="() => SaveAsync(overwrite: true)">Overwrite it</button>
+            </div>
+        }
+        else if (cur.Error is not null)
+        {
+            <div class="error-banner">@cur.Error</div>
+        }
+
+        <textarea @ref="_text" class="orch-yaml-editor config-editor-text" spellcheck="false" wrap="off"
+                  autocapitalize="off" autocomplete="off" aria-label="@($"Contents of {Path.GetFileName(cur.Path)}")"
+                  disabled="@(!cur.Loaded)" @bind="cur.Text" @bind:event="oninput"></textarea>
+
+        <div class="config-editor-actions">
+            <button class="btn btn-primary btn-sm" @onclick="() => SaveAsync()" disabled="@(!cur.Dirty || _busy)">
+                @(_busy ? "Saving…" : "Save")
+            </button>
+            <button class="btn btn-sm" @onclick="() => cur.Text = cur.Original" disabled="@(!cur.Dirty || _busy)">Revert</button>
+            @if (OnClose.HasDelegate)
+            {
+                <button class="btn btn-sm" @onclick="CloseAsync" disabled="@_busy">Close</button>
+            }
+            <span class="muted small config-editor-hint">Ctrl+S saves. Saving checks the team.</span>
+        </div>
+
+        @if (_confirmClose)
+        {
+            <div class="callout callout-warn">
+                <span>Unsaved changes in @string.Join(", ", _files.Where(f => f.Dirty).Select(f => Path.GetFileName(f.Path))).</span>
+                <button class="btn btn-sm" @onclick="() => OnClose.InvokeAsync()">Discard them</button>
+                <button class="btn btn-sm" @onclick="() => _confirmClose = false">Keep editing</button>
+            </div>
+        }
+    }
+
+    @if (_validation is not null && ShowValidation)
+    {
+        <div class="config-editor-validation">
+            <p class="@(_validation.Valid ? "text-success" : "text-danger")">
+                @(_validation.Valid ? "✓ Saved. The team checks out." : "✗ Saved, but the team has errors.")
+                @if (_validation.Config is { Error: null } c)
+                {
+                    <span class="muted small">@($" — {string.Join(" → ", c.Agents)} ({c.Flow})")</span>
+                }
+            </p>
+            @if (_validation.Issues.Count > 0)
+            {
+                <ul class="issue-list">
+                    @foreach (var issue in _validation.Issues)
+                    {
+                        <li class="issue-@issue.Level">
+                            <span class="issue-icon">@(issue.Level == "error" ? "✗" : "⚠")</span>
+                            @issue.Message
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+    else if (_validationError is not null && ShowValidation)
+    {
+        <p class="text-warning small">Saved, but the team couldn't be checked: @_validationError</p>
+    }
+</div>
+
+@code {
+    /// <summary>The team file.</summary>
+    [Parameter, EditorRequired] public string TeamFile { get; set; } = "";
+
+    /// <summary>Its markdown agent files, as full paths.</summary>
+    [Parameter] public IReadOnlyList<string> AgentFiles { get; set; } = [];
+
+    /// <summary>After a save, with the team's validation (null if it couldn't run).</summary>
+    [Parameter] public EventCallback<WireValidation?> OnSaved { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    /// <summary>Show the check that follows each save; off when the page shows it itself.</summary>
+    [Parameter] public bool ShowValidation { get; set; } = true;
+
+    private sealed class Buffer(string path)
+    {
+        public string  Path     { get; } = path;
+        public string  Text     { get; set; } = "";
+        public string  Original { get; set; } = "";
+        public string? Stamp    { get; set; }
+        public bool    Loaded   { get; set; }
+        public bool    Conflict { get; set; }
+        public string? Error    { get; set; }
+        public bool    Dirty    => Loaded && Text != Original;
+    }
+
+    private List<Buffer> _files = [];
+    private Buffer? _current;
+    private bool _busy, _confirmClose;
+    private WireValidation? _validation;
+    private string? _validationError;
+    private ElementReference _text;
+    private IJSObjectReference? _keys;
+    private DotNetObjectReference<ConfigEditor>? _self;
+
+    private bool AnyDirty => _files.Any(f => f.Dirty);
+
+    public bool HasUnsavedChanges => AnyDirty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var team = Path.GetFullPath(TeamFile);
+        if (_files.Count > 0 && _files[0].Path != team)
+        {
+            _files = [];
+            _validation = null;
+            _validationError = null;
+        }
+
+        // Keep open buffers (and their edits); add files the team names now, drop ones it no longer names unless edited.
+        var wanted = new[] { team }.Concat(AgentFiles.Select(Path.GetFullPath)).Distinct().ToList();
+        var next = wanted.Select(p => _files.FirstOrDefault(f => f.Path == p) ?? new Buffer(p)).ToList();
+        next.AddRange(_files.Where(f => f.Dirty && !wanted.Contains(f.Path)));
+        _files = next;
+        if (_current is null || !_files.Contains(_current)) _current = _files[0];
+
+        foreach (var f in _files.Where(f => !f.Loaded && f.Error is null))
+            await LoadAsync(f);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_keys is null && _current is not null)
+        {
+            _self = DotNetObjectReference.Create(this);
+            try { _keys = await JS.InvokeAsync<IJSObjectReference>("fuseraftEditor.attach", _text, _self); }
+            catch (JSDisconnectedException) { }
+        }
+    }
+
+    private async Task LoadAsync(Buffer f)
+    {
+        try
+        {
+            var file = await Files.ReadAsync(f.Path);
+            f.Text = f.Original = file.Text;
+            f.Stamp = file.Stamp;
+            f.Loaded = true;
+            f.Conflict = false;
+            f.Error = null;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or IOException)
+        {
+            f.Error = ex.Message;
+        }
+    }
+
+    private async Task ReloadAsync(Buffer f)
+    {
+        f.Loaded = false;
+        await LoadAsync(f);
+    }
+
+    [JSInvokable]
+    public Task SaveFromKeyboard() => InvokeAsync(() => SaveAsync());
+
+    private async Task SaveAsync(bool overwrite = false)
+    {
+        if (_current is not { } f || _busy || (!f.Dirty && !overwrite)) return;
+        _busy = true;
+        StateHasChanged();
+        try
+        {
+            f.Stamp = await Files.SaveAsync(f.Path, f.Text, f.Stamp, overwrite);
+            f.Original = f.Text;
+            f.Conflict = false;
+            f.Error = null;
+        }
+        catch (ConfigFileConflictException)
+        {
+            f.Conflict = true;
+            return;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or InvalidOperationException or IOException)
+        {
+            f.Error = ex.Message;
+            return;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+
+        try
+        {
+            _validation = await Configs.ValidateAsync(_files[0].Path);
+            _validationError = null;
+        }
+        catch (FuseraftCliException ex)
+        {
+            _validation = null;
+            _validationError = ex.Message;
+        }
+        await OnSaved.InvokeAsync(_validation);
+    }
+
+    private async Task CloseAsync()
+    {
+        if (AnyDirty) _confirmClose = true;
+        else await OnClose.InvokeAsync();
+    }
+
+    private async Task ConfirmLeaveAsync(LocationChangingContext context)
+    {
+        if (!AnyDirty) return;
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("confirm", "Leave without saving your config changes?"))
+                context.PreventNavigation();
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_keys is not null)
+        {
+            try { await _keys.InvokeVoidAsync("dispose"); await _keys.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+        _self?.Dispose();
+    }
+}
