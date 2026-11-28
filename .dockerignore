@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+artifacts/
+docs/
+tests/
+.fuseraft/
+.claude/
+.github/
+*.md
+!README.md

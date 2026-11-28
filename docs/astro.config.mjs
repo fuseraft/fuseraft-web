@@ -38,7 +38,7 @@ export default defineConfig({
 				},
 				{
 					label: 'Deploying',
-					items: ['deploy/service', 'deploy/reverse-proxy', 'deploy/restarts', 'deploy/backups'],
+					items: ['deploy/service', 'deploy/container', 'deploy/reverse-proxy', 'deploy/restarts', 'deploy/backups'],
 				},
 				{
 					label: 'Reference',

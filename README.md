@@ -28,6 +28,12 @@ fuseraft-web doesn't link fuseraft's code. It runs the `fuseraft` CLI and speaks
 
 It listens on `http://localhost:5000`, so only this machine can reach it until you [expose it deliberately](https://fuseraft.ai/fuseraft-web/deploy/service/).
 
+Or run the container image, which bundles the CLI ([details and limits](https://fuseraft.ai/fuseraft-web/deploy/container/)):
+
+```bash
+docker run -d -p 127.0.0.1:5000:5000 -v fuseraft-data:/data ghcr.io/fuseraft/fuseraft-web:latest
+```
+
 ---
 
 ## What it does
