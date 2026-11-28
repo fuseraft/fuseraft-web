@@ -1,0 +1,23 @@
+@* A reply's pieces in the order they streamed: text, reasoning and tool calls. *@
+@foreach (var part in Parts)
+{
+    switch (part)
+    {
+        case ReplTextPart { Text.Length: > 0 } text:
+            <Markdown Text="@text.Text" />
+            break;
+        case ReplThinkingPart { Text.Length: > 0 } thinking:
+            <details class="repl-thinking">
+                <summary>Thinking</summary>
+                <Markdown Text="@thinking.Text" />
+            </details>
+            break;
+        case ReplToolPart tool:
+            <ToolCard Tool="tool" />
+            break;
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ReplPart> Parts { get; set; } = [];
+}

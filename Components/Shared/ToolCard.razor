@@ -1,0 +1,42 @@
+@* One tool call: what it was asked, what it returned, and how long it took. *@
+<details class="tool-card @StateClass">
+    <summary>
+        <span class="tool-card-state" aria-label="@StateLabel">@StateIcon</span>
+        <span class="tool-card-name">@Tool.Name</span>
+        @if (Tool.Summary is { Length: > 0 } summary)
+        {
+            <span class="tool-card-summary">@summary</span>
+        }
+        @if (Tool.Agent is { Length: > 0 } agent)
+        {
+            <span class="tool-card-agent">@agent</span>
+        }
+        <span class="tool-card-time">@Elapsed</span>
+    </summary>
+    @if (Tool.Args is { Length: > 0 } args)
+    {
+        <div class="tool-card-label">Arguments</div>
+        <pre class="tool-card-pre">@args</pre>
+    }
+    @if (Tool.Output is { Length: > 0 } output)
+    {
+        <div class="tool-card-label">@(Tool.Ok == false ? "Error" : "Result")</div>
+        <pre class="tool-card-pre">@output</pre>
+    }
+    else if (Tool.Ok is null)
+    {
+        <div class="tool-card-label">Running…</div>
+    }
+</details>
+
+@code {
+    [Parameter, EditorRequired] public ReplToolPart Tool { get; set; } = default!;
+
+    private string StateClass => Tool.Ok switch { null => "running", true => "ok", false => "failed" };
+    private string StateIcon  => Tool.Ok switch { null => "◌", true => "✓", false => "✗" };
+    private string StateLabel => Tool.Ok switch { null => "running", true => "succeeded", false => "failed" };
+
+    private string Elapsed => Tool.Elapsed is { } e
+        ? e.TotalSeconds < 1 ? $"{e.TotalMilliseconds:0} ms" : e.TotalSeconds < 60 ? $"{e.TotalSeconds:0.0} s" : $"{e.TotalMinutes:0.0} min"
+        : "";
+}

@@ -1,6 +1,7 @@
 @page "/model-profiles"
 @implements IDisposable
 @inject ModelProfileService ProfileService
+@inject ModelCatalogService Catalog
 
 <PageTitle>Model Profiles — Fuseraft</PageTitle>
 
@@ -89,14 +90,9 @@ else
                 </select>
             </div>
             <div class="form-group">
-                <label class="form-label">Model ID <span class="form-required">*</span></label>
-                <input class="input" @bind="_formModelId" placeholder="e.g. claude-sonnet-4-6" />
+                <label class="form-label">API Endpoint</label>
+                <input class="input" @bind="_formEndpoint" @bind:event="oninput" placeholder="@EndpointPlaceholder" />
             </div>
-        </div>
-
-        <div class="form-group">
-            <label class="form-label">API Endpoint</label>
-            <input class="input" @bind="_formEndpoint" @bind:event="oninput" placeholder="https://api.anthropic.com" />
         </div>
 
         <div class="form-group">
@@ -128,6 +124,33 @@ else
             @if (_editId is not null && _editHasKey)
             {
                 <p class="form-hint">A key is stored for this profile. Enter a new one to replace it.</p>
+            }
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Model ID <span class="form-required">*</span></label>
+            <div class="input-with-btn">
+                <input class="input" @bind="_formModelId" @bind:event="oninput" list="profile-models"
+                       placeholder="@(_models.Count > 0 ? "Pick from the list or type an ID" : "e.g. claude-sonnet-4-6")" />
+                <button class="btn btn-sm" type="button" @onclick="ListModelsAsync" disabled="@_listing"
+                        title="Ask the provider which models this key can use">
+                    @(_listing ? "Listing…" : "List models")
+                </button>
+            </div>
+            <datalist id="profile-models">
+                @foreach (var m in _models) { <option value="@m"></option> }
+            </datalist>
+            @if (_modelsError is not null)
+            {
+                <p class="form-hint form-hint-error">@_modelsError</p>
+            }
+            else if (_models.Count > 0)
+            {
+                <p class="form-hint">@_models.Count models available. Start typing to filter them.</p>
+            }
+            else
+            {
+                <p class="form-hint">Fill in the provider, endpoint and key above, then list the models they offer.</p>
             }
         </div>
 
@@ -163,6 +186,45 @@ else
     private bool   KeyOptional          => LocalEndpoint.KeyOptional(_formProvider, _formEndpoint);
     private string _formReasoningEffort = string.Empty;
 
+    private IReadOnlyList<string> _models = [];
+    private string? _modelsError;
+    private bool    _listing;
+
+    private string EndpointPlaceholder => _formProvider switch
+    {
+        "other"  => "e.g. http://localhost:8000/v1",
+        "ollama" => "Blank for http://localhost:11434",
+        ""       => "Blank for the provider's public endpoint",
+        _        => $"Blank for {_formProvider}'s public endpoint",
+    };
+
+    private async Task ListModelsAsync()
+    {
+        _listing     = true;
+        _modelsError = null;
+        StateHasChanged();
+        try
+        {
+            _models = await Catalog.ListAsync(_formProvider, _formEndpoint, _formApiKey, _editId);
+            if (_models.Count == 0) _modelsError = "The provider listed no models. Type the model ID instead.";
+        }
+        catch (FuseraftCliException ex)
+        {
+            _models      = [];
+            _modelsError = ex.Message;
+        }
+        finally
+        {
+            _listing = false;
+        }
+    }
+
+    private void ResetModels()
+    {
+        _models      = [];
+        _modelsError = null;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         _profiles = await ProfileService.ListAsync();
@@ -188,6 +250,7 @@ else
         _formEndpoint        = string.Empty;
         _formApiKey          = string.Empty;
         _formReasoningEffort = string.Empty;
+        ResetModels();
         _formError    = null;
         _showKey      = false;
         _showForm     = true;
@@ -204,6 +267,7 @@ else
         _formEndpoint        = p.Endpoint;
         _formApiKey          = string.Empty;
         _formReasoningEffort = p.ReasoningEffort ?? string.Empty;
+        ResetModels();
         _formError    = null;
         _showKey      = false;
         _showForm     = true;

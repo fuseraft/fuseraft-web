@@ -124,3 +124,194 @@ window.fuseraftNotify = (() => {
   };
   return api;
 })();
+
+// Chat composer: a menu of slash commands as you type "/", and of workspace files after "@"; images
+// pasted or dropped into the box go to the Attach input; and /copy, Export and code-block copy buttons.
+// The menu lives on <body>, outside what Blazor renders, so its DOM updates never meet Blazor's.
+window.fuseraftChat = (() => {
+  const menu = document.createElement('div');
+  menu.className = 'composer-menu';
+  menu.setAttribute('role', 'listbox');
+  menu.hidden = true;
+  let active = null;   // { ta, dotnet, items, index, from }
+  let seq = 0, timer = 0;
+
+  const close = () => { menu.hidden = true; if (active) active.items = []; };
+
+  const place = ta => {
+    const r = ta.getBoundingClientRect();
+    menu.style.left = `${r.left}px`;
+    menu.style.width = `${Math.min(r.width, 680)}px`;
+    menu.style.bottom = `${window.innerHeight - r.top + 6}px`;
+  };
+
+  const render = () => {
+    const a = active;
+    if (!a || !a.items.length) { close(); return; }
+    if (!menu.isConnected) document.body.appendChild(menu);
+    menu.replaceChildren(...a.items.map((item, i) => {
+      const row = document.createElement('div');
+      row.className = 'composer-item' + (i === a.index ? ' active' : '');
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', i === a.index);
+      const label = document.createElement('span');
+      label.className = 'composer-label';
+      label.textContent = item.label;
+      row.appendChild(label);
+      if (item.detail) {
+        const detail = document.createElement('span');
+        detail.className = 'composer-detail';
+        detail.textContent = item.detail;
+        row.appendChild(detail);
+      }
+      row.addEventListener('mousedown', e => { e.preventDefault(); pick(i); });
+      return row;
+    }));
+    place(a.ta);
+    menu.hidden = false;
+    menu.children[a.index]?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const commands = ta => {
+    try { return JSON.parse(ta.dataset.commands || '[]'); } catch { return []; }
+  };
+
+  const update = () => {
+    const a = active;
+    if (!a) return;
+    const ta = a.ta, caret = ta.selectionStart, before = ta.value.slice(0, caret);
+    let m;
+    if ((m = /^\/(\S*)$/.exec(before))) {
+      const q = m[1].toLowerCase();
+      a.from = 0;
+      a.items = commands(ta)
+        .filter(c => c.u.startsWith('/') && c.u.slice(1).toLowerCase().startsWith(q))
+        .slice(0, 40)
+        .map(c => {
+          const name = c.u.split(' ')[0];
+          return { label: c.u, detail: c.d, insert: name + (c.u.includes(' ') ? ' ' : '') };
+        });
+      a.index = 0;
+      render();
+    } else if (ta.dataset.mentions === 'on' && (m = /(^|[\s(\[])@([^\s@]*)$/.exec(before))) {
+      const q = m[2], from = caret - q.length - 1, mine = ++seq;
+      clearTimeout(timer);
+      timer = setTimeout(async () => {
+        let paths = [];
+        try { paths = await a.dotnet.invokeMethodAsync('SuggestFiles', q); } catch { }
+        if (mine !== seq || active !== a) return;
+        a.from = from;
+        a.items = paths.map(p => ({ label: p, insert: '@' + p + (p.endsWith('/') ? '' : ' '), more: p.endsWith('/') }));
+        a.index = 0;
+        render();
+      }, 120);
+    } else {
+      seq++;
+      close();
+    }
+  };
+
+  const pick = i => {
+    const a = active, item = a?.items[i];
+    if (!item) return;
+    const ta = a.ta, caret = ta.selectionStart;
+    ta.value = ta.value.slice(0, a.from) + item.insert + ta.value.slice(caret);
+    const at = a.from + item.insert.length;
+    ta.setSelectionRange(at, at);
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.focus();
+    if (item.more) update(); else close();
+  };
+
+  // What's typed is already the highlighted command, so picking it would only add a space.
+  const typedWhole = a => {
+    const item = a.items[a.index];
+    return !!item && a.from === 0 && item.insert.trim().toLowerCase() === a.ta.value.slice(0, a.ta.selectionStart).trim().toLowerCase();
+  };
+
+  // Ahead of the page's own Enter-to-send, so picking from the menu doesn't send the message.
+  window.addEventListener('keydown', e => {
+    const a = active;
+    if (!a || e.target !== a.ta || menu.hidden || !a.items.length) return;
+    const stop = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+    if (e.key === 'ArrowDown') { stop(); a.index = (a.index + 1) % a.items.length; render(); }
+    else if (e.key === 'ArrowUp') { stop(); a.index = (a.index - 1 + a.items.length) % a.items.length; render(); }
+    else if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && typedWhole(a)) close();   // already complete: let it send
+    else if ((e.key === 'Enter' && !e.shiftKey && !e.isComposing) || e.key === 'Tab') { stop(); pick(a.index); }
+    else if (e.key === 'Escape') { stop(); close(); }
+  }, true);
+  window.addEventListener('resize', () => { if (active && !menu.hidden) place(active.ta); });
+  document.addEventListener('scroll', () => { if (active && !menu.hidden) place(active.ta); }, true);
+
+  const attachImages = files => {
+    const images = [...files].filter(f => f.type.startsWith('image/'));
+    const input = document.getElementById('repl-attach');
+    if (!images.length || !input) return false;
+    const dt = new DataTransfer();
+    images.forEach(f => dt.items.add(f));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  };
+
+  const attach = (ta, dotnet) => {
+    if (ta.__fuseraftChat) { ta.__fuseraftChat.dotnet = dotnet; return; }
+    const a = { ta, dotnet, items: [], index: 0, from: 0 };
+    ta.__fuseraftChat = a;
+    ta.addEventListener('input', () => { active = a; update(); });
+    ta.addEventListener('click', () => { active = a; update(); });
+    ta.addEventListener('focus', () => { active = a; });
+    ta.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== ta) close(); }, 100));
+    ta.addEventListener('paste', e => {
+      const hasText = e.clipboardData?.types.includes('text/plain');
+      if (attachImages(e.clipboardData?.files ?? []) && !hasText) e.preventDefault();
+    });
+    ta.addEventListener('dragover', e => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); });
+    ta.addEventListener('drop', e => { if (attachImages(e.dataTransfer?.files ?? [])) e.preventDefault(); });
+  };
+
+  const copy = async text => {
+    try { await navigator.clipboard.writeText(text); return true; }
+    catch {
+      const t = document.createElement('textarea');
+      t.value = text;
+      t.style.position = 'fixed'; t.style.opacity = '0';
+      document.body.appendChild(t);
+      t.select();
+      const ok = document.execCommand('copy');
+      t.remove();
+      return ok;
+    }
+  };
+
+  const download = (name, text) => {
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  // A copy button on every code block in rendered Markdown.
+  const decorate = () => {
+    for (const pre of document.querySelectorAll('.md pre:not([data-copy])')) {
+      pre.dataset.copy = '1';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'code-copy';
+      button.textContent = 'Copy';
+      button.addEventListener('click', async () => {
+        const code = pre.querySelector('code')?.textContent ?? pre.textContent;
+        button.textContent = await copy(code) ? 'Copied' : 'Copy failed';
+        setTimeout(() => { button.textContent = 'Copy'; }, 1500);
+      });
+      pre.appendChild(button);
+    }
+  };
+  new MutationObserver(decorate).observe(document.body, { childList: true, subtree: true });
+
+  return { attach, copy, download };
+})();

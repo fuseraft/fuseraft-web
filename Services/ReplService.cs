@@ -9,7 +9,22 @@ namespace fuseraft.Web.Services;
 
 public enum ReplStatus { Idle, Thinking, Error }
 
-public sealed record ReplMessage(string Role, string Text, IReadOnlyList<string> ToolCalls, DateTimeOffset At);
+public sealed record ReplMessage(string Role, string Text, IReadOnlyList<string> ToolCalls, DateTimeOffset At)
+{
+    /// <summary>A reply's text, tool calls and reasoning in the order they streamed; a shell message's run.</summary>
+    public IReadOnlyList<ReplPart> Parts { get; init; } = [];
+    /// <summary>The files a reply changed.</summary>
+    public IReadOnlyList<ReplFileChange> Changes { get; init; } = [];
+    public ReplUsage? Usage { get; init; }
+    /// <summary>For a system message: <c>info</c>, <c>warning</c> or <c>error</c>; null for command output.</summary>
+    public string? Tone { get; init; }
+    /// <summary>Shown again from the saved chat when it was resumed.</summary>
+    public bool Replayed { get; init; }
+    /// <summary>The names of the images sent with a user message.</summary>
+    public IReadOnlyList<string> Images { get; init; } = [];
+    /// <summary>A user message sent while a reply ran, which the chat hasn't taken in yet.</summary>
+    public bool Queued { get; set; }
+}
 
 /// <summary>An <c>ask_user</c> question waiting for the chat's owner.</summary>
 public sealed record ReplQuestion(string Question, IReadOnlyList<string> Options, bool AllowOther);
@@ -45,6 +60,28 @@ public sealed class ActiveReplSession : IDisposable
 
     // Quiet commands sent whose message_end hasn't arrived; that message_end isn't the end of a reply.
     internal int QuietPending;
+
+    /// <summary>The slash commands the chat offers, from its <c>ready</c> event; empty before fuseraft v1.34.0.</summary>
+    public IReadOnlyList<ReplCommand> Commands { get; set; } = [];
+    public ReplStatusLine? StatusLine { get; set; }
+    /// <summary>Every file the chat has changed, newest last, with its line counts added up.</summary>
+    public List<ReplFileChange> ChangedFiles { get; } = [];
+    /// <summary>Text the chat asked to copy (<c>/copy</c>); <see cref="CopySeq"/> counts the requests.</summary>
+    public string? CopyText { get; set; }
+    public int     CopySeq  { get; set; }
+
+    internal readonly object Gate = new();
+    internal List<ReplPart> StreamingParts { get; } = [];
+    internal List<ReplFileChange> TurnChanges { get; } = [];
+    internal DateTimeOffset? TurnStartedAt { get; set; }
+    internal ReplShellPart? Shell { get; set; }
+
+    /// <summary>The reply streaming now, in order.</summary>
+    public ReplPart[] LiveParts() { lock (Gate) return [.. StreamingParts]; }
+
+    public ReplMessage[] Transcript() { lock (Gate) return [.. Messages]; }
+
+    internal void Add(ReplMessage message) { lock (Gate) Messages.Add(message); }
 
     public List<ReplMessage> Messages { get; } = [];
 
@@ -312,6 +349,7 @@ public sealed class ReplService : IDisposable
                 s.SessionId = Str(root, "sessionId") ?? s.SessionId;
                 s.ModelId   = Str(root, "model")     ?? s.ModelId;
                 s.Status    = ReplStatus.Idle;
+                s.Commands  = ParseCommands(root);
                 break;
 
             case "title":
@@ -322,7 +360,7 @@ public sealed class ReplService : IDisposable
             case "cleared":
                 // /clear started a new chat in this process; the old one is saved and listed under Recent Chats.
                 s.SessionId = Str(root, "sessionId") ?? s.SessionId;
-                s.Messages.Clear();
+                ClearTranscript(s);
                 s.Question = null;
                 s.Error    = null;
                 break;
@@ -354,10 +392,10 @@ public sealed class ReplService : IDisposable
                 if (root.TryGetProperty("quiet", out var q) && q.ValueKind == JsonValueKind.True)
                     Interlocked.Increment(ref s.QuietPending);
                 else if (raw && typed == "/clear")
-                    s.Messages.Clear();
+                    ClearTranscript(s);
                 else if (!raw)
                 {
-                    s.Messages.Add(new ReplMessage("user", typed, [], DateTimeOffset.UtcNow));
+                    s.Add(new ReplMessage("user", typed, [], DateTimeOffset.UtcNow));
                     s.Status        = ReplStatus.Thinking;
                     s.StreamingText = "";
                 }
@@ -367,17 +405,115 @@ public sealed class ReplService : IDisposable
             case "info":
                 // Slash-command output, pre-rendered as Markdown.
                 if (Str(root, "text") is { Length: > 0 } output)
-                    s.Messages.Add(new ReplMessage("system", output, [], DateTimeOffset.UtcNow));
+                    s.Add(new ReplMessage("system", output, [], DateTimeOffset.UtcNow));
                 break;
 
             case "token":
-                s.StreamingText = (s.StreamingText ?? "") + (Str(root, "text") ?? "");
+                var chunk = Str(root, "text") ?? "";
+                s.StreamingText = (s.StreamingText ?? "") + chunk;
                 s.Status = ReplStatus.Thinking;
+                lock (s.Gate)
+                {
+                    if (s.StreamingParts.LastOrDefault() is ReplTextPart last) last.Text += chunk;
+                    else s.StreamingParts.Add(new ReplTextPart { Text = chunk });
+                }
+                break;
+
+            case "thinking":
+                var thought = Str(root, "text") ?? "";
+                lock (s.Gate)
+                {
+                    if (s.StreamingParts.LastOrDefault() is ReplThinkingPart lastThought) lastThought.Text += thought;
+                    else s.StreamingParts.Add(new ReplThinkingPart { Text = thought });
+                }
                 break;
 
             case "tool_call":
                 var name = Str(root, "name") ?? "";
                 s.StreamingTools = s.StreamingTools is null ? name : s.StreamingTools + " → " + name;
+                lock (s.Gate)
+                    s.StreamingParts.Add(new ReplToolPart
+                    {
+                        Id      = Str(root, "id") ?? "",
+                        Name    = name,
+                        Summary = Str(root, "summary"),
+                        Args    = root.TryGetProperty("args", out var args) && args.ValueKind == JsonValueKind.Object
+                            ? JsonSerializer.Serialize(args, IndentedJson) : null,
+                        Agent   = Str(root, "agent"),
+                    });
+                break;
+
+            case "tool_result":
+                var callId = Str(root, "id");
+                lock (s.Gate)
+                    // A message sent mid-reply moves the calls streamed so far into the transcript.
+                    if (s.StreamingParts.Concat(s.Messages.LastOrDefault(m => m.Role == "assistant")?.Parts ?? [])
+                            .OfType<ReplToolPart>().LastOrDefault(t => t.Id == callId && t.Ok is null) is { } call)
+                    {
+                        call.Ok      = !root.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.False;
+                        call.Output  = Cap(Str(root, "output"), MaxToolOutput);
+                        call.Elapsed = DateTimeOffset.UtcNow - call.StartedAt;
+                    }
+                break;
+
+            case "file_changed":
+                NoteChange(s, new ReplFileChange(Str(root, "path") ?? "", Str(root, "sigil") ?? "M",
+                    Int(root, "added"), Int(root, "removed")));
+                break;
+
+            case "file_changes":
+                // The turn's whole list, at its end: anything a file_changed didn't already report.
+                if (root.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Array)
+                    foreach (var c in changes.EnumerateArray())
+                        if (Str(c, "path") is { Length: > 0 } changed && !s.TurnChanges.Any(t => t.Path == changed))
+                            NoteChange(s, new ReplFileChange(changed, Str(c, "sigil") ?? "M", 0, 0));
+                break;
+
+            case "status":
+                s.StatusLine = new ReplStatusLine(
+                    Str(root, "model") ?? s.ModelId, Int(root, "turn"),
+                    root.TryGetProperty("context", out var ctx) && ctx.ValueKind == JsonValueKind.Number ? ctx.GetDouble() : 0,
+                    Str(root, "level") ?? "clear", Strings(root, "modes"),
+                    Long(root, "input") ?? 0, Long(root, "output") ?? 0, Long(root, "cached") ?? 0);
+                if (Str(root, "model") is { Length: > 0 } model) s.ModelId = model;
+                break;
+
+            case "turn_start":
+                s.TurnStartedAt ??= DateTimeOffset.UtcNow;
+                s.Status = ReplStatus.Thinking;
+                MarkDelivered(s);
+                break;
+
+            case "compacted":
+                s.Add(new ReplMessage("system", "Earlier messages were summarized to make room in the context window.", [], DateTimeOffset.UtcNow) { Tone = "info" });
+                break;
+
+            case "replay":
+                AddReplay(s, root);
+                break;
+
+            case "shell_start":
+                var run = new ReplShellPart { Command = Str(root, "command") ?? "" };
+                s.Shell  = run;
+                s.Status = ReplStatus.Thinking;
+                s.Add(new ReplMessage("shell", run.Command, [], DateTimeOffset.UtcNow) { Parts = [run] });
+                break;
+
+            case "shell_output":
+                if (s.Shell is { } shell && shell.Output.Length < MaxShellOutput)
+                    shell.Output += (Str(root, "text") ?? "") + "\n";
+                break;
+
+            case "shell_end":
+                // A shell command sends no message_end.
+                if (s.Shell is { } ended) ended.Done = true;
+                s.Shell = null;
+                if (s.StreamingParts.Count == 0) ResetStreaming(s);
+                break;
+
+            case "copy":
+                s.CopyText = Str(root, "text");
+                s.CopySeq++;
                 break;
 
             case "message_end":
@@ -387,27 +523,19 @@ public sealed class ReplService : IDisposable
                     Interlocked.Decrement(ref s.QuietPending);
                     break;
                 }
-                if (s.StreamingText is { Length: > 0 } text)
-                {
-                    var tools = new List<string>();
-                    if (root.TryGetProperty("toolCalls", out var tc) && tc.ValueKind == JsonValueKind.Array)
-                        foreach (var item in tc.EnumerateArray())
-                            if (item.GetString() is { } tn) tools.Add(tn);
-                    s.Messages.Add(new ReplMessage("assistant", text, tools, DateTimeOffset.UtcNow));
-                    alert = ReplAlert.Replied;
-                }
-                s.Status        = ReplStatus.Idle;
-                s.StreamingText = null;
-                s.StreamingTools = null;
+                var tools = new List<string>();
+                if (root.TryGetProperty("toolCalls", out var tc) && tc.ValueKind == JsonValueKind.Array)
+                    foreach (var item in tc.EnumerateArray())
+                        if (item.GetString() is { } tn) tools.Add(tn);
+                var usage = new ReplUsage(Long(root, "inputTokens"), Long(root, "outputTokens"), Long(root, "cachedInputTokens"),
+                    s.TurnStartedAt is { } began ? DateTimeOffset.UtcNow - began : null);
+                if (EndReply(s, tools, usage, cancelled: false)) alert = ReplAlert.Replied;
+                MarkDelivered(s);
                 break;
 
             case "cancelled":
                 s.Question = null;
-                if (s.StreamingText is { Length: > 0 } partial)
-                    s.Messages.Add(new ReplMessage("assistant", partial + "\n*(cancelled)*", [], DateTimeOffset.UtcNow));
-                s.Status        = ReplStatus.Idle;
-                s.StreamingText = null;
-                s.StreamingTools = null;
+                EndReply(s, [], null, cancelled: true);
                 break;
 
             case "error":
@@ -416,17 +544,19 @@ public sealed class ReplService : IDisposable
                 s.Error         = err;
                 s.StreamingText = null;
                 s.StreamingTools = null;
-                s.Messages.Add(new ReplMessage("system", $"Error: {err}", [], DateTimeOffset.UtcNow));
+                s.Add(new ReplMessage("system", $"Error: {err}", [], DateTimeOffset.UtcNow));
                 alert = ReplAlert.Failed;
                 break;
 
             case "applied":
                 // A mid-turn command (/title, /hitl on|off) took effect without waiting for the reply.
                 if (Str(root, "message") is { Length: > 0 } applied)
-                    s.Messages.Add(new ReplMessage("system", applied, [], DateTimeOffset.UtcNow));
+                    s.Add(new ReplMessage("system", applied, [], DateTimeOffset.UtcNow));
                 break;
 
             case "interjection":
+                // "carried" messages start the next turn, whose turn_start takes them in.
+                if (Str(root, "status") is "joined" or "dropped") MarkDelivered(s);
                 // "joined" needs no note: the reply already takes the message into account.
                 var note = Str(root, "status") switch
                 {
@@ -435,18 +565,18 @@ public sealed class ReplService : IDisposable
                     _         => null,
                 };
                 if (note is not null)
-                    s.Messages.Add(new ReplMessage("system", note, [], DateTimeOffset.UtcNow));
+                    s.Add(new ReplMessage("system", note, [], DateTimeOffset.UtcNow));
                 break;
 
             case "warning":
                 if (Str(root, "text") is { } warn)
-                    s.Messages.Add(new ReplMessage("system", warn, [], DateTimeOffset.UtcNow));
+                    s.Add(new ReplMessage("system", warn, [], DateTimeOffset.UtcNow));
                 break;
 
             case "retrying":
                 var att = root.TryGetProperty("attempt", out var ae) ? ae.GetInt32() : 0;
                 var max = root.TryGetProperty("max",     out var me) ? me.GetInt32() : 0;
-                s.Messages.Add(new ReplMessage("system", $"Retrying… ({att}/{max})", [], DateTimeOffset.UtcNow));
+                s.Add(new ReplMessage("system", $"Retrying… ({att}/{max})", [], DateTimeOffset.UtcNow));
                 break;
 
             case "plan":
@@ -459,7 +589,7 @@ public sealed class ReplService : IDisposable
                         var tool = step.TryGetProperty("tool",        out var st) ? st.GetString()       : null;
                         planLines.Add($"{n}. {desc}" + (tool is not null ? $"  `{tool}`" : ""));
                     }
-                s.Messages.Add(new ReplMessage("system",
+                s.Add(new ReplMessage("system",
                     $"**Plan captured** ({planLines.Count} steps). Type `/execute` to run.\n\n" +
                     string.Join("\n", planLines),
                     [], DateTimeOffset.UtcNow));
@@ -472,7 +602,7 @@ public sealed class ReplService : IDisposable
                 var sleft  = root.TryGetProperty("stepsLeft", out var sl)  ? sl.GetInt32()     : 0;
                 var icon   = sstat == "complete" ? "✓" : sstat == "skipped" ? "↷" : "✗";
                 var leftStr = sleft > 0 ? $" · {sleft} remaining" : "";
-                s.Messages.Add(new ReplMessage("system", $"{icon} Step {sn2}/{stot} {sstat}{leftStr}", [], DateTimeOffset.UtcNow));
+                s.Add(new ReplMessage("system", $"{icon} Step {sn2}/{stot} {sstat}{leftStr}", [], DateTimeOffset.UtcNow));
                 break;
 
             case "session_end":
@@ -480,7 +610,7 @@ public sealed class ReplService : IDisposable
                 s.Status        = ReplStatus.Idle;
                 s.StreamingText = null;
                 s.StreamingTools = null;
-                s.Messages.Add(new ReplMessage("system", "Session ended.", [], DateTimeOffset.UtcNow));
+                s.Add(new ReplMessage("system", "Session ended.", [], DateTimeOffset.UtcNow));
                 _sessions.TryRemove(key, out _);
                 break;
         }
@@ -489,35 +619,169 @@ public sealed class ReplService : IDisposable
         if (alert is { } a) Alert?.Invoke(s, a);
     }
 
+    private const int MaxToolOutput  = 20_000;
+    private const int MaxShellOutput = 200_000;
+
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
+    private static List<ReplCommand> ParseCommands(JsonElement root)
+    {
+        var commands = new List<ReplCommand>();
+        if (root.TryGetProperty("commands", out var list) && list.ValueKind == JsonValueKind.Array)
+            foreach (var c in list.EnumerateArray())
+                if (c.ValueKind == JsonValueKind.Object && Str(c, "usage") is { Length: > 0 } usage)
+                    commands.Add(new ReplCommand(usage, Str(c, "description") ?? ""));
+        return commands;
+    }
+
+    private static void NoteChange(ActiveReplSession s, ReplFileChange change)
+    {
+        if (change.Path.Length == 0) return;
+        lock (s.Gate)
+        {
+            Merge(s.TurnChanges, change);
+            Merge(s.ChangedFiles, change);
+        }
+
+        // One row per file: its latest sigil, its line counts added up, moved to the end.
+        static void Merge(List<ReplFileChange> list, ReplFileChange change)
+        {
+            var i = list.FindIndex(c => c.Path == change.Path);
+            if (i < 0) { list.Add(change); return; }
+            var before = list[i];
+            list.RemoveAt(i);
+            // A file added and then edited is still new.
+            var sigil = before.Sigil == "A" && change.Sigil == "M" ? "A" : change.Sigil;
+            list.Add(change with { Sigil = sigil, Added = before.Added + change.Added, Removed = before.Removed + change.Removed });
+        }
+    }
+
+    private static void ClearTranscript(ActiveReplSession s)
+    {
+        lock (s.Gate)
+        {
+            s.Messages.Clear();
+            s.ChangedFiles.Clear();
+        }
+        s.StatusLine = null;
+    }
+
+    private static void MarkDelivered(ActiveReplSession s)
+    {
+        foreach (var m in s.Transcript())
+            if (m.Queued) m.Queued = false;
+    }
+
+    /// <summary>Turns the reply streamed so far into a message; false when there was nothing to show.</summary>
+    private static bool EndReply(ActiveReplSession s, IReadOnlyList<string> tools, ReplUsage? usage, bool cancelled)
+    {
+        bool replied;
+        lock (s.Gate)
+        {
+            var parts   = s.StreamingParts.ToList();
+            var text    = s.StreamingText ?? "";
+            var changes = s.TurnChanges.ToList();
+            replied = text.Length > 0;
+            if (cancelled && parts.Count > 0)
+            {
+                text += "\n*(cancelled)*";
+                parts.Add(new ReplTextPart { Text = "\n*(cancelled)*" });
+            }
+            foreach (var running in parts.OfType<ReplToolPart>().Where(t => t.Ok is null))
+            {
+                running.Ok      = false;
+                running.Output ??= "(stopped)";
+            }
+            if (parts.Count > 0 || changes.Count > 0)
+                s.Messages.Add(new ReplMessage("assistant", text, tools.Count > 0 ? tools : [.. parts.OfType<ReplToolPart>().Select(t => t.Name)],
+                    DateTimeOffset.UtcNow) { Parts = parts, Changes = changes, Usage = usage });
+        }
+        ResetStreaming(s);
+        return replied;
+    }
+
+    private static void ResetStreaming(ActiveReplSession s)
+    {
+        lock (s.Gate)
+        {
+            s.StreamingParts.Clear();
+            s.TurnChanges.Clear();
+        }
+        s.Status         = ReplStatus.Idle;
+        s.StreamingText  = null;
+        s.StreamingTools = null;
+        s.TurnStartedAt  = null;
+    }
+
+    /// <summary>Earlier turns of a resumed chat, which the CLI sends right after it's ready.</summary>
+    private static void AddReplay(ActiveReplSession s, JsonElement root)
+    {
+        if (!root.TryGetProperty("turns", out var turns) || turns.ValueKind != JsonValueKind.Array || turns.GetArrayLength() == 0)
+            return;
+        var total = Int(root, "total");
+        var shown = turns.GetArrayLength();
+        var compacted = root.TryGetProperty("compacted", out var cm) && cm.ValueKind == JsonValueKind.True;
+        var lead = shown < total ? $"The last {shown} of this chat's {total} turns." : $"This chat's {shown} earlier turn{(shown == 1 ? "" : "s")}.";
+        s.Add(new ReplMessage("system", lead + (compacted ? " Older ones were summarized." : ""), [], DateTimeOffset.UtcNow)
+            { Tone = "info", Replayed = true });
+        foreach (var turn in turns.EnumerateArray())
+        {
+            if (Str(turn, "user") is { Length: > 0 } user)
+                s.Add(new ReplMessage("user", user, [], DateTimeOffset.UtcNow) { Replayed = true });
+            var calls = new List<string>();
+            if (turn.TryGetProperty("toolCalls", out var tc) && tc.ValueKind == JsonValueKind.Array)
+                foreach (var call in tc.EnumerateArray())
+                    if (Str(call, "name") is { Length: > 0 } n) calls.Add(n);
+            if (Str(turn, "assistant") is { Length: > 0 } reply || calls.Count > 0)
+                s.Add(new ReplMessage("assistant", Str(turn, "assistant") ?? "", calls, DateTimeOffset.UtcNow) { Replayed = true });
+        }
+    }
+
     // ── User actions ─────────────────────────────────────────────────────────
 
-    public void SendMessage(WebUser user, string key, string text)
+    public void SendMessage(WebUser user, string key, string text, IReadOnlyList<ReplImage>? images = null)
     {
         if (GetSession(user, key) is not { } s) return;
         if (s.Status == ReplStatus.Thinking && !s.InputWhileBusy) return;
 
         var trimmed = text.Trim();
-        if (string.IsNullOrEmpty(trimmed)) return;
+        images ??= [];
+        if (string.IsNullOrEmpty(trimmed) && images.Count == 0) return;
 
         var busy = s.Status == ReplStatus.Thinking;
         // Sent mid-reply: what has streamed so far came first, so it goes above the message.
-        if (busy && s.StreamingText is { Length: > 0 } sofar)
-            s.Messages.Add(new ReplMessage("assistant", sofar, [], DateTimeOffset.UtcNow));
-        s.Messages.Add(new ReplMessage("user", trimmed, [], DateTimeOffset.UtcNow));
-        s.Status        = ReplStatus.Thinking;
-        s.StreamingText = "";
-        if (!busy) s.StreamingTools = null;
-        s.Error         = null;
+        if (busy)
+            lock (s.Gate)
+                if (s.StreamingParts.Count > 0)
+                {
+                    s.Messages.Add(new ReplMessage("assistant", s.StreamingText ?? "",
+                        [.. s.StreamingParts.OfType<ReplToolPart>().Select(t => t.Name)], DateTimeOffset.UtcNow) { Parts = [.. s.StreamingParts] });
+                    s.StreamingParts.Clear();
+                    s.StreamingText = "";
+                }
+        // A shell command shows as its own run, from shell_start; it isn't a message to the model.
+        var shell = trimmed.StartsWith('!') && images.Count == 0;
+        if (!shell)
+            s.Add(new ReplMessage("user", trimmed, [], DateTimeOffset.UtcNow)
+                { Images = [.. images.Select(i => i.Name)], Queued = busy });
+        s.Status = ReplStatus.Thinking;
+        if (!busy)
+        {
+            s.StreamingText  = "";
+            s.StreamingTools = null;
+            s.TurnStartedAt  = DateTimeOffset.UtcNow;
+        }
+        s.Error = null;
 
         SessionChanged?.Invoke(key);
-        WriteStdin(s, trimmed);
+        WriteStdin(s, trimmed, images);
     }
 
     /// <summary>Leaves a line in the chat once an approval is answered, since its card disappears.</summary>
     private async Task NoteAnswerAsync(string key, ActiveReplSession s, PendingApproval request)
     {
         var approved = await request.Tcs.Task;
-        s.Messages.Add(new ReplMessage("system", ApprovalNote(request, approved), [], DateTimeOffset.UtcNow));
+        s.Add(new ReplMessage("system", ApprovalNote(request, approved), [], DateTimeOffset.UtcNow));
         SessionChanged?.Invoke(key);
     }
 
@@ -532,7 +796,7 @@ public sealed class ReplService : IDisposable
         if (answer is not null && !q.AllowOther && !q.Options.Contains(answer)) return;
 
         s.Question = null;
-        s.Messages.Add(new ReplMessage("system",
+        s.Add(new ReplMessage("system",
             answer is null ? $"Skipped: {q.Question}" : $"{q.Question}\n\n**You answered:** {answer}",
             [], DateTimeOffset.UtcNow));
         SessionChanged?.Invoke(key);
@@ -568,7 +832,7 @@ public sealed class ReplService : IDisposable
     public void ClearSession(WebUser user, string key)
     {
         if (GetSession(user, key) is not { } s) return;
-        s.Messages.Clear();
+        ClearTranscript(s);
         SessionChanged?.Invoke(key);
         // Also clear CLI history
         WriteStdinRaw(s, "/clear");
@@ -597,6 +861,52 @@ public sealed class ReplService : IDisposable
         }
     }
 
+    /// <summary>The chat as Markdown, for a download.</summary>
+    public string? Export(WebUser user, string key)
+    {
+        if (GetSession(user, key) is not { } s) return null;
+        var md = new System.Text.StringBuilder();
+        md.Append($"# fuseraft chat {s.SessionId}\n\n");
+        md.Append($"{s.ModelId}{(s.Cwd is null ? "" : $" · `{s.Cwd}`")} · exported {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC\n");
+        foreach (var m in s.Transcript())
+        {
+            md.Append('\n');
+            switch (m.Role)
+            {
+                case "user":
+                    md.Append("## You\n\n").Append(m.Text).Append('\n');
+                    if (m.Images.Count > 0) md.Append($"\n*Images: {string.Join(", ", m.Images)}*\n");
+                    break;
+                case "assistant":
+                    md.Append("## fuseraft\n\n");
+                    if (m.Parts.Count == 0)
+                    {
+                        md.Append(m.Text).Append('\n');
+                        if (m.ToolCalls.Count > 0) md.Append($"\n*Tools: {string.Join(", ", m.ToolCalls)}*\n");
+                    }
+                    foreach (var part in m.Parts)
+                        md.Append(part switch
+                        {
+                            ReplTextPart t     => t.Text + "\n",
+                            ReplThinkingPart t => $"\n> *Thinking:* {t.Text.ReplaceLineEndings(" ")}\n\n",
+                            ReplToolPart t     => $"\n- `{t.Name}`{(t.Summary is { Length: > 0 } sum ? $" {sum}" : "")} {(t.Ok == false ? "✗" : "✓")}\n\n",
+                            _                  => "",
+                        });
+                    if (m.Changes.Count > 0)
+                        md.Append($"\n*Changed: {string.Join(", ", m.Changes.Select(c => $"{c.Sigil} {c.Path}"))}*\n");
+                    break;
+                case "shell":
+                    var run = m.Parts.OfType<ReplShellPart>().FirstOrDefault();
+                    md.Append($"```console\n$ {m.Text}\n{run?.Output}```\n");
+                    break;
+                default:
+                    md.Append("> ").Append(m.Text.ReplaceLineEndings("\n> ")).Append('\n');
+                    break;
+            }
+        }
+        return md.ToString();
+    }
+
     // ── Queries ──────────────────────────────────────────────────────────────
 
     /// <summary>A chat <paramref name="user"/> may see and type into: only their own, admins included.</summary>
@@ -611,9 +921,11 @@ public sealed class ReplService : IDisposable
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private void WriteStdin(ActiveReplSession s, string text)
+    private void WriteStdin(ActiveReplSession s, string text, IReadOnlyList<ReplImage>? images = null)
     {
-        var json = JsonSerializer.Serialize(new { type = "user_input", text }, _jsonOpts);
+        var json = images is { Count: > 0 }
+            ? JsonSerializer.Serialize(new { type = "user_input", text, images = images.Select(i => new { name = i.Name, data = i.DataUrl }) }, _jsonOpts)
+            : JsonSerializer.Serialize(new { type = "user_input", text }, _jsonOpts);
         try { s.Bridge?.Input.WriteLine(json); } catch { }
     }
 
@@ -643,25 +955,45 @@ public sealed class ReplService : IDisposable
     /// The profile's connection, for this chat only: without it the REPL uses the connection in the account's
     /// config, if it has one, whatever profile was picked.
     /// </summary>
-    internal static IEnumerable<string> ConnectionArgs(ModelProfile profile)
+    internal static IEnumerable<string> ConnectionArgs(ModelProfile profile) => ConnectionArgs(profile.Provider, profile.Endpoint);
+
+    internal static IEnumerable<string> ConnectionArgs(string? provider, string? endpoint)
     {
         // The Profiles page's "other" means OpenAI-compatible, which is the CLI's default for a custom endpoint.
-        if (profile.Provider is { Length: > 0 } provider && provider != "other")
+        if (provider is { Length: > 0 } && provider != "other")
         {
             yield return "--provider";
             yield return provider;
         }
-        if (!string.IsNullOrWhiteSpace(profile.Endpoint))
+        if (!string.IsNullOrWhiteSpace(endpoint))
         {
             yield return "--endpoint";
-            yield return profile.Endpoint.Trim();
+            yield return endpoint.Trim();
         }
     }
 
     private static string NewKey() => Guid.NewGuid().ToString("N")[..8];
 
     private static string? Str(JsonElement el, string prop) =>
-        el.TryGetProperty(prop, out var v) ? v.GetString() : null;
+        el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static int Int(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : 0;
+
+    private static long? Long(JsonElement el, string prop) =>
+        el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var l) ? l : null;
+
+    private static List<string> Strings(JsonElement el, string prop)
+    {
+        var list = new List<string>();
+        if (el.TryGetProperty(prop, out var v) && v.ValueKind == JsonValueKind.Array)
+            foreach (var item in v.EnumerateArray())
+                if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } str) list.Add(str);
+        return list;
+    }
+
+    private static string? Cap(string? text, int max) =>
+        text is null || text.Length <= max ? text : text[..max] + $"\n… ({text.Length - max:N0} more characters)";
 
     /// <summary>Lets go of every chat; their relays keep them open for the next server.</summary>
     public void Dispose()

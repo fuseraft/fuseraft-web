@@ -1,0 +1,21 @@
+@* A unified diff from git, coloured by line. *@
+<div class="hitl-diff repl-diff">
+    @foreach (var line in Diff.Split('\n'))
+    {
+        <div class="diff-line @Kind(line)">@(line.Length == 0 ? " " : line)</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Diff { get; set; } = "";
+
+    private static string Kind(string line) => line switch
+    {
+        _ when line.StartsWith("+++") || line.StartsWith("---") || line.StartsWith("diff ") || line.StartsWith("index ")
+            || line.StartsWith("new file") || line.StartsWith("deleted file") => "diff-header",
+        _ when line.StartsWith("@@") => "diff-skipped",
+        _ when line.StartsWith('+')  => "diff-added",
+        _ when line.StartsWith('-')  => "diff-removed",
+        _ => "",
+    };
+}
